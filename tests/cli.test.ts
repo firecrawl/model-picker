@@ -64,15 +64,24 @@ afterAll(() => server.stop());
 
 const cacheDir = await mkdtemp(join(tmpdir(), "model-picker-test-"));
 
-// A fake OpenCode: lists two OpenRouter models, and "solves" any task by writing done.txt.
+// A fake OpenCode: lists two OpenRouter models, writes plan.json when asked to plan, logs every
+// step it's given to steps.txt, and reports each session as costing $0.01.
 const fakeBin = join(cacheDir, "bin");
 await mkdir(fakeBin);
 await Bun.write(
   join(fakeBin, "opencode"),
   `#!/bin/sh
-if [ "$1" = models ]; then printf 'openrouter/test/mid\\nopenrouter/test/frontier\\n'; exit 0; fi
-echo done > done.txt
-echo '{"type":"text","part":{"text":"Fixed it."}}'
+if [ "$1" = models ]; then printf 'openrouter/test/mid\\nopenrouter/test/cheap-open\\n'; exit 0; fi
+if [ "$1" = session ]; then
+  echo '{"info":{"cost":0.01,"tokens":{"input":100,"output":50,"reasoning":0,"cache":{"read":0,"write":0}}}}'
+  exit 0
+fi
+for prompt; do :; done
+case "$prompt" in
+  *"You are the planner"*) echo '{"steps":[{"title":"Engine","instructions":"x","difficulty":"hard"},{"title":"Styles","instructions":"y","difficulty":"medium"}]}' > plan.json ;;
+  *) echo "$7" >> steps.txt ;;
+esac
+echo '{"type":"text","sessionID":"ses_1","part":{"text":"Done."}}'
 `,
 );
 await chmod(join(fakeBin, "opencode"), 0o755);
@@ -110,23 +119,16 @@ test("providers sorts cheapest first and reports the spread", async () => {
   expect(table).toContain("4.0x price spread");
 });
 
-test("run races the cheapest pick against --vs, each in its own worktree", async () => {
-  const repo = await mkdtemp(join(tmpdir(), "model-picker-repo-"));
-  await Bun.$`git init -q && git commit -q --allow-empty -m init`.cwd(repo);
-  const output = await run(
-    "run",
-    "fix the bug",
-    "--vs",
-    "frontier",
-    "--min-score",
-    "45",
-    "--dir",
-    repo,
-    "--check",
-    "test -f done.txt",
+test("build plans, gives each step the cheapest qualifying model, and reports the cost", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "model-picker-build-"));
+  const output = await run("build", "make a game", "--dir", dir);
+  expect(output).toContain("[plan] Plan the build: mid");
+  expect(output).toContain("[hard] Engine: mid");
+  expect(output).toContain("[medium] Styles: cheap-open");
+  expect(output).toContain("Total:");
+  expect(output).toContain("$0.030");
+  expect(await Bun.file(join(dir, "steps.txt")).text()).toBe(
+    "openrouter/test/mid\nopenrouter/test/cheap-open\n",
   );
-  expect(output).toContain("openrouter/test/mid");
-  expect(output).toMatch(/✓ mid finished .* check PASS/);
-  expect(output).toMatch(/✓ frontier finished .* check PASS/);
-  expect(output).toContain("reply: Fixed it.");
+  expect(await Bun.file(join(dir, "REPORT.md")).text()).toContain("| **Total** |");
 });

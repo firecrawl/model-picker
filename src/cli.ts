@@ -1,10 +1,13 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
 import { fetchModels, pick, type Model, type PickOptions } from "./models.ts";
-import { openRouterModels, toRunnable, type Runnable } from "./openrouter.ts";
+import { mkdir } from "node:fs/promises";
+import { resolve } from "node:path";
+import { build } from "./build.ts";
+import { openRouterModels } from "./openrouter.ts";
 import { print, printError } from "./output.ts";
 import { fetchProviders, type ProviderSort } from "./providers.ts";
-import { race, repoRoot, type RaceResult } from "./race.ts";
+import { stepLine, summaryLine, writeReport } from "./report.ts";
 
 const USAGE = `model-picker: find the cheapest AI model that's smart enough for the job.
 Data: Artificial Analysis benchmarks via Firecrawl Alexandria. Needs FIRECRAWL_API_KEY.
@@ -23,10 +26,11 @@ Data: Artificial Analysis benchmarks via Firecrawl Alexandria. Needs FIRECRAWL_A
   model-picker search <text> [--json]
       Find a model's slug by name. Also lists models with no measured cost yet.
 
-  model-picker run "<task>" --vs <slug> [--min-score 45] [--check "bun test"] [--dir .]
-      Race the cheapest qualifying model against --vs on a real task in your repo, through
-      OpenCode + OpenRouter (needs OPENROUTER_API_KEY). Each model works in its own git
-      worktree; --check runs your tests in each one afterwards. Takes pick's filters too.`;
+  model-picker build "<task>" [--dir ./out] [--report <dir>] [--open]
+      Build something with the cheapest model for each step, through OpenCode + OpenRouter
+      (needs OPENROUTER_API_KEY): a capable model writes plan.json, then each step goes to
+      the cheapest model good enough for its difficulty. Writes REPORT.md and report.json
+      with every step's model, time, tokens and cost.`;
 
 const money = (usd: number): string => (usd < 0.1 ? `$${usd.toFixed(3)}` : `$${usd.toFixed(2)}`);
 const taskCost = (usd: number | undefined): string =>
@@ -170,53 +174,25 @@ async function runSearch(
   ]);
 }
 
-function describe(runnable: Runnable): string {
-  const { model } = runnable;
-  return `${model.name} (${runnable.opencodeId}): score ${model.score.toFixed(1)}, ${taskCost(model.costPerTask)} per benchmark task`;
-}
-
-function finished(result: RaceResult): string {
-  const status = result.exitCode === 0 ? "finished" : `failed (exit ${result.exitCode})`;
-  const check =
-    result.checkPassed === undefined ? "" : result.checkPassed ? " · check PASS" : " · check FAIL";
-  const diff = result.diffStat === "" ? "no changes" : result.diffStat;
-  return `${result.runnable.model.name} ${status} in ${Math.round(result.seconds)}s · ${diff}${check}`;
-}
-
-async function runRace(task: string | undefined, values: Values): Promise<void> {
+async function runBuild(task: string | undefined, values: Values): Promise<void> {
   if (task === undefined || task === "")
-    throw new Error('Usage: model-picker run "<task>" --vs <slug>');
-  if (typeof values.vs !== "string")
-    throw new Error("run needs --vs <slug>: the model you'd use today.");
-  const repo = await repoRoot(typeof values.dir === "string" ? values.dir : ".");
+    throw new Error('Usage: model-picker build "<task>" --dir <folder>');
+  const dir = resolve(typeof values.dir === "string" ? values.dir : ".");
+  const reportDir = resolve(typeof values.report === "string" ? values.report : dir);
+  await mkdir(dir, { recursive: true });
   const [models, openRouter] = await Promise.all([fetchModels(), openRouterModels()]);
   if (openRouter.size === 0) {
     throw new Error(
       "OpenCode isn't installed or lists no OpenRouter models. Install it from opencode.ai.",
     );
   }
-  const baseline = toRunnable(findModel(models, values.vs), openRouter);
-  if (!baseline) throw new Error(`${values.vs} isn't available on OpenRouter through OpenCode.`);
-  const challenger = pick(models, pickOptions(values))
-    .map((model) => toRunnable(model, openRouter))
-    .find((runnable) => runnable !== undefined && runnable.model.slug !== baseline.model.slug);
-  if (!challenger)
-    throw new Error("No cheaper qualifying model is on OpenRouter. Lower --min-score.");
-
-  print(`Task: ${task}\nRepo: ${repo}\n`);
-  print(`  cheapest pick  ${describe(challenger)}`);
-  print(`  vs             ${describe(baseline)}\n`);
-  const check = typeof values.check === "string" ? values.check : undefined;
-  const results = await race(repo, [challenger, baseline], task, check, (result) =>
-    print(`✓ ${finished(result)}`),
+  print(`Building in ${dir}\n`);
+  const { minScore: _ignored, ...baseOptions } = pickOptions(values);
+  const steps = await build(task, dir, models, openRouter, baseOptions, (step) =>
+    print(stepLine(step)),
   );
-  print("");
-  for (const result of results) {
-    print(
-      `${result.runnable.model.name}\n  worktree: ${result.worktree}\n  reply: ${result.reply.slice(0, 400)}\n`,
-    );
-  }
-  print("Compare what each run cost at https://openrouter.ai/activity");
+  await writeReport(reportDir, task, steps);
+  print(`\n${summaryLine(steps)}\nReport: ${reportDir}/REPORT.md`);
 }
 
 const { values, positionals } = parseArgs({
@@ -229,8 +205,8 @@ const { values, positionals } = parseArgs({
     sort: { type: "string" },
     json: { type: "boolean" },
     "claude-code": { type: "boolean" },
-    check: { type: "string" },
     dir: { type: "string" },
+    report: { type: "string" },
     help: { type: "boolean", short: "h" },
   },
 });
@@ -240,7 +216,7 @@ try {
   if (command === "pick") await runPick(values);
   else if (command === "providers") await runProviders(argument, values);
   else if (command === "search") await runSearch(argument, values);
-  else if (command === "run") await runRace(argument, values);
+  else if (command === "build") await runBuild(argument, values);
   else print(USAGE);
 } catch (error) {
   printError(error instanceof Error ? error.message : String(error));

@@ -35,24 +35,21 @@ Then ask Claude Code things like "which model should I use for my support bot?" 
 | `pick [--min-score N] [--max-cost USD] [--open] [--claude-code] [--vs slug]` | Cheapest models at or above a score, optionally compared with the one you use now. `--claude-code` limits it to the Claude models and effort levels Claude Code runs natively |
 | `providers <slug> [--sort cost\|speed]` | Every provider serving one model, by cost per task or speed |
 | `search <name>` | Find a model's slug. Also lists models Artificial Analysis hasn't measured a cost for yet |
-| `run "<task>" --vs slug [--min-score N] [--check "bun test"] [--dir .]` | Race the cheapest qualifying model against yours on a real task in your repo, through [OpenCode](https://opencode.ai) and OpenRouter, then run your tests on each result |
+| `build "<task>" [--dir ./out] [--report dir]` | Build something with the cheapest good-enough model per step, through [OpenCode](https://opencode.ai) and OpenRouter, and write a report of every step's model, time, tokens and cost |
 
 Add `--json` to any command for machine-readable output.
 
 **Score** is the Artificial Analysis Intelligence Index (0-100; today's best models score about 55-58). **$/task** is what it costs to run one Intelligence Index task, which accounts for how many tokens a model actually burns, not just its price per token.
 
-## Racing models on your own code
+## Building with the cheapest model per step
 
-`run` needs [OpenCode](https://opencode.ai) and an `OPENROUTER_API_KEY`. Each model works in its own git worktree of your repo, so they can't overwrite each other or your checkout; the worktree paths are printed so you can inspect the diffs. Compare what each run cost on your [OpenRouter activity page](https://openrouter.ai/activity).
+`build` needs [OpenCode](https://opencode.ai) and an `OPENROUTER_API_KEY`.
 
-OpenCode runs with `--auto`, which approves its tool calls without asking. Worktrees keep edits apart but are not a sandbox, so only race on repos you trust.
+1. The cheapest model scoring 50+ writes `plan.json`: 3-6 steps, each tagged hard, medium or easy.
+2. Each step runs as its own OpenCode session on the cheapest model clearing that difficulty's floor (hard 50, medium 42, easy 30).
+3. `REPORT.md` and `report.json` record each step's model, time, tokens (input, output, reasoning, cache) and cost, taken from OpenCode's session export.
 
-```
-$ model-picker run "Fix the failing test in math.ts" --vs claude-haiku-5-5 --min-score 40 --check "bun test"
-
-✓ Claude Haiku 5.5 (Xhigh) finished in 12s · 1 file changed, 2 insertions(+), 1 deletion(-) · check PASS
-✓ Claude Haiku 5.5 (Max) finished in 22s · 1 file changed, 2 insertions(+), 1 deletion(-) · check PASS
-```
+OpenCode runs with `--auto`, which approves its tool calls without asking, so only build in folders you're happy for it to change.
 
 ## Cost
 
