@@ -1,4 +1,4 @@
-Bun CLI plus a Claude Code skill. All data comes from Firecrawl Alexandria (`POST /v2/scrape` with an `alexandria` array of up to 10 calls), cached for 12 hours in `~/.cache/model-picker`.
+Bun CLI plus a Claude Code skill. All data comes from Firecrawl Alexandria (`POST /v2/scrape` with an `alexandria` array of up to 10 calls), cached for 24 hours in `~/.cache/model-picker`.
 
 - `src/alexandria.ts`: the one HTTP client: batching, cache, 429 retry.
 - `src/models.ts`: Artificial Analysis leaderboard and the cost/score frontier.

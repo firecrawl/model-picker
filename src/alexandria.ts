@@ -27,7 +27,7 @@ const cacheSchema = z.array(z.unknown());
 const API_URL = process.env.FIRECRAWL_API_URL ?? "https://api.firecrawl.dev";
 const CACHE_DIR = process.env.MODEL_PICKER_CACHE ?? join(homedir(), ".cache", "model-picker");
 // Leaderboard and provider prices move daily at most; caching keeps repeat runs free and under the per-minute limit.
-const CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_RETRIES = 3;
 
 async function readCache(key: string): Promise<unknown[] | undefined> {

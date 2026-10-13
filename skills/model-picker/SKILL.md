@@ -5,7 +5,7 @@ description: Find the cheapest AI model that is smart enough for a task, and the
 
 # Model picker
 
-The CLI is `src/cli.ts` two directories above this skill's base directory; the commands below write it as `bun src/cli.ts`, so run them from there or use the full path. If that directory has no `node_modules`, run `bun install` there first (a plugin install doesn't). It needs `FIRECRAWL_API_KEY` (free at https://firecrawl.dev). Results are cached for 12 hours, so repeat runs cost nothing.
+The CLI is `src/cli.ts` two directories above this skill's base directory; the commands below write it as `bun src/cli.ts`, so run them from there or use the full path. If that directory has no `node_modules`, run `bun install` there first (a plugin install doesn't). It needs `FIRECRAWL_API_KEY` (free at https://firecrawl.dev). Results are cached for 24 hours, so repeat runs cost nothing.
 
 ## 1. Turn the task into a score floor
 

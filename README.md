@@ -81,7 +81,7 @@ OpenCode runs with `--auto`, which approves its tool calls without asking, so on
 
 ## Cost
 
-A `pick` uses 20 Firecrawl credits and a `providers` lookup 5. Results are cached for 12 hours, so repeat runs are free.
+A `pick` uses 20 Firecrawl credits and a `providers` lookup 5. Results are cached for 24 hours, so repeat runs are free.
 
 ## License
 
