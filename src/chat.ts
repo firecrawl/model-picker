@@ -120,6 +120,47 @@ async function unknownCreators(requested: readonly string[]): Promise<string[]> 
   return problems.length === 0 ? [] : [...problems, `Known makers: ${known.join(", ")}`];
 }
 
+const CHAT_FLAGS = ["--region", "--creators", "--open", "--value-margin", "--pi-help", "--help"];
+
+/** Every option Pi accepts, read from its own --help so it stays right across Pi versions. */
+async function piOptions(): Promise<Set<string>> {
+  const help = await Bun.$`${join(ROOT, "node_modules", ".bin", "pi")} --help`
+    .quiet()
+    .nothrow()
+    .text();
+  const options = new Set<string>();
+  for (const line of help.split("\n")) {
+    if (!/^\s+-/.test(line)) continue;
+    const usage = line.trim().split(/\s{2,}/)[0] ?? "";
+    for (const match of usage.matchAll(/-{1,2}[a-zA-Z][\w-]*/g)) options.add(match[0]);
+  }
+  return options;
+}
+
+/** Options neither chat nor Pi knows, each with the closest real one when there is one. */
+async function unknownOptions(piArgs: readonly string[]): Promise<string[]> {
+  const end = piArgs.indexOf("--");
+  const flags = (end === -1 ? piArgs : piArgs.slice(0, end))
+    .filter((arg) => /^-{1,2}[a-zA-Z]/.test(arg))
+    .map((arg) => arg.split("=")[0] ?? arg);
+  if (flags.length === 0) return [];
+  const known = [...CHAT_FLAGS, ...(await piOptions())];
+  const problems = flags
+    .filter((flag) => !known.includes(flag))
+    .map((flag) => {
+      const close = known.filter(
+        (option) =>
+          option.length > 2 && (editDistance(flag, option) <= 2 || option.startsWith(flag)),
+      );
+      const suggestion =
+        close.length > 0
+          ? ` Did you mean ${close.map((option) => `"${option}"`).join(" or ")}?`
+          : "";
+      return `Unknown option "${flag}".${suggestion}`;
+    });
+  return problems.length === 0 ? [] : [...problems, "See mp chat --help for every option."];
+}
+
 export async function runChat(args: string[]): Promise<number> {
   if (args.includes("--help") || args.includes("-h")) {
     print(CHAT_HELP);
@@ -132,7 +173,10 @@ export async function runChat(args: string[]): Promise<number> {
       args.map((arg) => (arg === "--pi-help" ? "--help" : arg)),
     );
     const creators = z.array(z.string()).optional().parse(overrides.creators);
-    const problems = creators ? await unknownCreators(creators) : [];
+    const problems = [
+      ...(await unknownOptions(piArgs)),
+      ...(creators ? await unknownCreators(creators) : []),
+    ];
     if (problems.length > 0) throw new Error(problems.join("\n"));
     return await launchPi(overrides, piArgs, dotEnv);
   } catch (error) {
