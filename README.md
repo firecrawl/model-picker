@@ -95,6 +95,24 @@ Any prompt ──► Planner: the cheapest model scoring 50+ (today GPT-6.1 Sol 
 - **The planner is the same for every prompt.** It's picked by the same rule as a hard step, because a wrong label sends hard work to a weak model or splits the job badly. Planning cost $0.07-0.17 per build in our tests.
 - **Models only change when the leaderboard does.** The Artificial Analysis leaderboard is fetched at most once a day. Within a build everything is fixed; a new cheaper model scoring 50+ becomes the planner from the next day's fetch. `--claude-code`, `--open` and `--max-cost` filter the candidates (with `--claude-code` the planner is Claude Opus 5.5 Medium).
 
+## Pi router (experimental)
+
+`pi/router.ts` is a [Pi](https://pi.dev) extension that adds a model called `model-picker/auto`. Before each message you send, a cheap model rates it hard, medium or easy, and Pi answers with the cheapest model clearing that floor (50 / 42 / 30), in the same session. Tool calls and retries within a turn stay on that turn's model, so the prompt cache survives.
+
+```sh
+bun install
+FIRECRAWL_API_KEY=fc-... OPENROUTER_API_KEY=sk-or-... \
+  bunx pi -e ./pi/router.ts --model model-picker/auto
+```
+
+The footer shows which model answered, and `/session` shows cost per model. To limit the candidates, write `~/.config/model-picker/router.json` (or point `MODEL_PICKER_ROUTER_SETTINGS` at a file):
+
+```json
+{ "creators": ["OpenAI", "Anthropic"], "openWeightsOnly": false, "maxCost": 1 }
+```
+
+Pi's virtual-model API is experimental, so Pi is pinned (1.2.0).
+
 ## Cost
 
 A `pick` uses 20 Firecrawl credits and a `providers` lookup 5. Results are cached for 24 hours, so repeat runs are free.

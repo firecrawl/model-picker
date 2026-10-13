@@ -1,4 +1,6 @@
-import { mkdir } from "node:fs/promises";
+// Node APIs rather than Bun's: the Pi router loads this module inside Pi, which runs on Node.
+import { createHash } from "node:crypto";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -31,15 +33,15 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_RETRIES = 3;
 
 async function readCache(key: string): Promise<unknown[] | undefined> {
-  const file = Bun.file(join(CACHE_DIR, `${key}.json`));
-  if (!(await file.exists())) return undefined;
-  if (Date.now() - file.lastModified > CACHE_TTL_MS) return undefined;
-  return cacheSchema.parse(await file.json());
+  const path = join(CACHE_DIR, `${key}.json`);
+  const info = await stat(path).catch(() => undefined);
+  if (!info || Date.now() - info.mtimeMs > CACHE_TTL_MS) return undefined;
+  return cacheSchema.parse(JSON.parse(await readFile(path, "utf8")));
 }
 
 async function writeCache(key: string, value: unknown[]): Promise<void> {
   await mkdir(CACHE_DIR, { recursive: true });
-  await Bun.write(join(CACHE_DIR, `${key}.json`), JSON.stringify(value));
+  await writeFile(join(CACHE_DIR, `${key}.json`), JSON.stringify(value));
 }
 
 function apiKey(): string {
@@ -62,7 +64,7 @@ async function post(calls: Call[]): Promise<z.infer<typeof responseSchema>["data
     if (response.status === 429 && attempt < MAX_RETRIES) {
       const waitSeconds = Number(response.headers.get("retry-after") ?? 20);
       printError(`Rate limited by Firecrawl, retrying in ${waitSeconds}s...`);
-      await Bun.sleep(waitSeconds * 1000);
+      await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
       continue;
     }
     if (!response.ok) {
@@ -74,7 +76,7 @@ async function post(calls: Call[]): Promise<z.infer<typeof responseSchema>["data
 
 /** Runs up to 10 Alexandria calls in one request, serving them from the local cache when fresh. */
 export async function callAll(calls: Call[]): Promise<unknown[]> {
-  const key = new Bun.CryptoHasher("sha256").update(JSON.stringify(calls)).digest("hex");
+  const key = createHash("sha256").update(JSON.stringify(calls)).digest("hex");
   const cached = await readCache(key);
   if (cached) return cached;
   const results = await post(calls);
