@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { mkdtemp } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -64,10 +64,24 @@ afterAll(() => server.stop());
 
 const cacheDir = await mkdtemp(join(tmpdir(), "model-picker-test-"));
 
+// A fake OpenCode: lists two OpenRouter models, and "solves" any task by writing done.txt.
+const fakeBin = join(cacheDir, "bin");
+await mkdir(fakeBin);
+await Bun.write(
+  join(fakeBin, "opencode"),
+  `#!/bin/sh
+if [ "$1" = models ]; then printf 'openrouter/test/mid\\nopenrouter/test/frontier\\n'; exit 0; fi
+echo done > done.txt
+echo '{"type":"text","part":{"text":"Fixed it."}}'
+`,
+);
+await chmod(join(fakeBin, "opencode"), 0o755);
+
 async function run(...args: string[]): Promise<string> {
   const process = Bun.spawn(["bun", join(import.meta.dir, "../src/cli.ts"), ...args], {
     env: {
       ...Bun.env,
+      PATH: `${fakeBin}:${Bun.env.PATH ?? ""}`,
       FIRECRAWL_API_KEY: "test",
       FIRECRAWL_API_URL: server.url.origin,
       MODEL_PICKER_CACHE: cacheDir,
@@ -94,4 +108,25 @@ test("providers sorts cheapest first and reports the spread", async () => {
   const table = await run("providers", "some-model");
   expect(table.indexOf("Cheap")).toBeLessThan(table.indexOf("Pricey"));
   expect(table).toContain("4.0x price spread");
+});
+
+test("run races the cheapest pick against --vs, each in its own worktree", async () => {
+  const repo = await mkdtemp(join(tmpdir(), "model-picker-repo-"));
+  await Bun.$`git init -q && git commit -q --allow-empty -m init`.cwd(repo);
+  const output = await run(
+    "run",
+    "fix the bug",
+    "--vs",
+    "frontier",
+    "--min-score",
+    "45",
+    "--dir",
+    repo,
+    "--check",
+    "test -f done.txt",
+  );
+  expect(output).toContain("openrouter/test/mid");
+  expect(output).toMatch(/✓ mid finished .* check PASS/);
+  expect(output).toMatch(/✓ frontier finished .* check PASS/);
+  expect(output).toContain("reply: Fixed it.");
 });
