@@ -69,7 +69,9 @@ function parseEvents(jsonLines: string): { sessionId: string | undefined; reply:
 // OpenCode takes its project directory from PWD, not the process cwd.
 const inDir = (dir: string) => ({ cwd: dir, env: { ...process.env, PWD: dir } });
 
-const EXPORT_ATTEMPTS = 3;
+// Right after a session ends, its export can fail while OpenCode is still saving it; by hand
+// a few seconds later it succeeds, so wait longer before each retry.
+const EXPORT_RETRY_DELAYS_MS = [0, 3000, 10_000, 30_000];
 
 async function exportUsage(dir: string, sessionId: string): Promise<Usage | undefined> {
   const exporter = Bun.spawn(["opencode", "session", "export", sessionId], {
@@ -94,7 +96,8 @@ async function exportUsage(dir: string, sessionId: string): Promise<Usage | unde
 }
 
 async function sessionUsage(dir: string, sessionId: string): Promise<Usage | undefined> {
-  for (let attempt = 1; attempt <= EXPORT_ATTEMPTS; attempt++) {
+  for (const delay of EXPORT_RETRY_DELAYS_MS) {
+    await Bun.sleep(delay);
     const usage = await exportUsage(dir, sessionId);
     if (usage) return usage;
   }
