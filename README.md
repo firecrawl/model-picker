@@ -24,7 +24,7 @@ model-picker is a command-line tool plus a Claude Code skill that drives it. You
 git clone https://github.com/OWNER/model-picker   # replace OWNER once the repo is public
 cd model-picker
 bun install
-bun link                                          # puts `model-picker` on your PATH
+bun link                                          # puts `model-picker` and `mp` on your PATH
 export FIRECRAWL_API_KEY=fc-...
 model-picker pick --min-score 45
 ```
@@ -46,7 +46,7 @@ Set `FIRECRAWL_API_KEY` in the shell you start Claude Code from. Then ask things
 
 ## How it picks
 
-It always picks the cheapest model that clears a score floor; there's nothing to switch on to make it prefer cheap models. A model at a given reasoning effort counts as its own row (e.g. `gpt-6-1-sol-low` and `gpt-6-1-sol-high`), so picking a row also picks the effort level. To steer it:
+It picks the cheapest model that clears a score floor, with one exception: a model costing at most 10% more wins if it scores higher, since a few percent of price isn't worth several points of intelligence. There's nothing to switch on to make it prefer cheap models. A model at a given reasoning effort counts as its own row (e.g. `gpt-6-1-sol-low` and `gpt-6-1-sol-high`), so picking a row also picks the effort level. To steer it:
 
 - `--min-score` raises or lowers the floor for `pick` (`build` uses hard 50, medium 42, easy 30).
 - `--max-cost` caps the benchmark cost per task.
@@ -105,10 +105,10 @@ model-picker chat            # in any project folder; extra options go to Pi
 
 `chat` opens Pi's terminal UI with the router loaded and selected. It needs `OPENROUTER_API_KEY`, and the Firecrawl key from your environment or model-picker's own `.env`.
 
-The footer shows which model answered, and `/session` shows cost per model. To limit the candidates, write `~/.config/model-picker/router.json` (or point `MODEL_PICKER_ROUTER_SETTINGS` at a file):
+The footer shows why each message went where it did (e.g. `hard → GPT-6.1 Sol high`) and a running savings line, e.g. `$0.42 spent · ~$3.10 on Claude Opus 5.5 · saved 86%`. The comparison prices this session's actual tokens at the baseline model's rates, so it's an estimate: the baseline would have written different responses. `/session` shows cost per model. To limit the candidates, write `~/.config/model-picker/router.json` (or point `MODEL_PICKER_ROUTER_SETTINGS` at a file):
 
 ```json
-{ "creators": ["OpenAI", "Anthropic"], "openWeightsOnly": false, "maxCost": 1 }
+{ "creators": ["OpenAI", "Anthropic"], "openWeightsOnly": false, "maxCost": 1, "baseline": "anthropic/claude-opus-5.5" }
 ```
 
 Pi's virtual-model API is experimental, so Pi is pinned (1.2.0).

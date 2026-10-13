@@ -113,3 +113,23 @@ export function pick(models: Model[], options: PickOptions): MeasuredModel[] {
   }
   return frontier;
 }
+
+// A model costing up to this much more than the cheapest qualifying one wins if it scores higher:
+// a few percent of price isn't worth several points of intelligence.
+const VALUE_MARGIN = 1.1;
+
+/** The highest-scoring candidate priced within VALUE_MARGIN of the cheapest one. */
+export function bestValue<T>(
+  candidates: readonly T[],
+  score: (candidate: T) => number,
+  cost: (candidate: T) => number,
+): T | undefined {
+  const cheapest = Math.min(...candidates.map(cost));
+  return candidates
+    .filter((candidate) => cost(candidate) <= cheapest * VALUE_MARGIN)
+    .reduce<T | undefined>(
+      (best, candidate) =>
+        best === undefined || score(candidate) > score(best) ? candidate : best,
+      undefined,
+    );
+}

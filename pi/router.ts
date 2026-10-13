@@ -1,4 +1,10 @@
-import type { Api, Message, Model, ModelThinkingLevel } from "@earendil-works/pi-ai";
+import {
+  calculateCost,
+  type Api,
+  type Message,
+  type Model,
+  type ModelThinkingLevel,
+} from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -10,7 +16,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { fetchModels, pick } from "../src/models.ts";
+import { bestValue, fetchModels, pick } from "../src/models.ts";
 
 // Same Intelligence Index floors as `model-picker build`.
 const FLOORS = { hard: 50, medium: 42, easy: 30 } as const;
@@ -25,6 +31,8 @@ const settingsSchema = z.object({
   creators: z.array(z.string()).optional(),
   openWeightsOnly: z.boolean().default(false),
   maxCost: z.number().default(Number.POSITIVE_INFINITY),
+  // OpenRouter model the savings line compares against.
+  baseline: z.string().default("anthropic/claude-opus-5.5"),
 });
 const SETTINGS_FILE =
   process.env.MODEL_PICKER_ROUTER_SETTINGS ??
@@ -37,6 +45,7 @@ const EFFORTS: Record<string, ModelThinkingLevel> = {
   xhigh: "xhigh",
 };
 const EFFORT_SUFFIX = /-(low|medium|high|xhigh)$/;
+const dollars = (usd: number): string => `$${usd.toFixed(usd < 1 ? 3 : 2)}`;
 const normalize = (id: string): string => id.toLowerCase().replaceAll(/[^a-z0-9]/g, "");
 
 const CLASSIFY_PROMPT = `You route coding requests to models. Rate how much reasoning the user's latest request needs:
@@ -65,14 +74,29 @@ async function loadRoutes(ctx: ExtensionContext): Promise<Routes> {
   );
   const routeFor = (difficulty: Difficulty): ModelRoute<RouterState> => {
     const options = { ...settings, minScore: FLOORS[difficulty], creator: undefined };
-    for (const candidate of pick(benchmarked, options)) {
+    const reachable = pick(benchmarked, options).flatMap((candidate) => {
       const model = openRouter.get(normalize(candidate.slug.replace(EFFORT_SUFFIX, "")));
-      if (!model) continue;
+      return model ? [{ candidate, model }] : [];
+    });
+    const choice = bestValue(
+      reachable,
+      ({ candidate }) => candidate.score,
+      ({ candidate }) => candidate.costPerTask,
+    );
+    if (choice) {
       // Artificial Analysis labels a model's top effort "Max" and gives it no slug suffix.
-      const effort = EFFORT_SUFFIX.exec(candidate.slug)?.[1];
+      const effort = EFFORT_SUFFIX.exec(choice.candidate.slug)?.[1];
       const thinkingLevel =
-        effort === undefined ? (/\(Max\b/.test(candidate.name) ? "max" : "off") : EFFORTS[effort];
-      return { model, thinkingLevel: thinkingLevel ?? "medium", state: { difficulty } };
+        effort === undefined
+          ? /\(Max\b/.test(choice.candidate.name)
+            ? "max"
+            : "off"
+          : EFFORTS[effort];
+      return {
+        model: choice.model,
+        thinkingLevel: thinkingLevel ?? "medium",
+        state: { difficulty },
+      };
     }
     throw new Error(
       `model-picker: no ${difficulty} model (score ${FLOORS[difficulty]}+) on OpenRouter`,
@@ -157,6 +181,33 @@ export default function modelPickerRouter(pi: ExtensionAPI): void {
     });
   });
 
+  // Prices this session's actual token usage at the baseline model's rates. It's an estimate:
+  // the baseline would have produced different responses and token counts.
+  pi.on("message_end", async (event, ctx) => {
+    if (event.message.role !== "assistant") return;
+    const { baseline } = await loadSettings();
+    const baselineModel = ctx.modelRegistry.find("openrouter", baseline);
+    // At message_end the finished reply isn't on the branch yet, so add it explicitly.
+    const replies = ctx.sessionManager
+      .getBranch()
+      .flatMap((entry) =>
+        entry.type === "message" && entry.message.role === "assistant" ? [entry.message] : [],
+      )
+      .filter((reply) => reply.timestamp !== event.message.timestamp)
+      .concat(event.message);
+    let spent = 0;
+    let baselineCost = 0;
+    for (const reply of replies) {
+      spent += reply.usage.cost.total;
+      if (baselineModel) baselineCost += calculateCost(baselineModel, reply.usage).total;
+    }
+    const comparison =
+      baselineModel && baselineCost > 0
+        ? ` · ~${dollars(baselineCost)} on ${baselineModel.name} · saved ${Math.round((1 - spent / baselineCost) * 100)}%`
+        : "";
+    ctx.ui.setStatus("model-picker-savings", `${dollars(spent)} spent${comparison}`);
+  });
+
   pi.registerVirtualModel<RouterState>({
     provider: "model-picker",
     id: "auto",
@@ -170,7 +221,13 @@ export default function modelPickerRouter(pi: ExtensionAPI): void {
       }
       if (request.reason !== "user") return byDifficulty.easy;
       // The cheapest easy-tier model is the classifier: one short call per user message.
-      return byDifficulty[await classify(ctx, byDifficulty.easy.model, request)];
+      const difficulty = await classify(ctx, byDifficulty.easy.model, request);
+      const route = byDifficulty[difficulty];
+      ctx.ui.setStatus(
+        "model-picker-route",
+        `${difficulty} → ${route.model.name} ${route.thinkingLevel}`,
+      );
+      return route;
     },
   });
 }

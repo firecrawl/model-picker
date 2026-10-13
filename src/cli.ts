@@ -10,7 +10,7 @@ import { print, printError } from "./output.ts";
 import { fetchProviders, type ProviderSort } from "./providers.ts";
 import { stepLine, summaryLine, writeReport } from "./report.ts";
 
-const USAGE = `model-picker: find the cheapest AI model that's smart enough for the job.
+const USAGE = `model-picker (or mp): find the cheapest AI model that's smart enough for the job.
 Data: Artificial Analysis benchmarks via Firecrawl Alexandria. Needs FIRECRAWL_API_KEY.
 
   model-picker pick [--min-score 40] [--max-cost 5] [--open] [--claude-code] [--vs <slug>] [--json]

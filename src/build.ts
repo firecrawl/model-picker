@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { z } from "zod";
-import { pick, type Model, type PickOptions } from "./models.ts";
+import { bestValue, pick, type Model, type PickOptions } from "./models.ts";
 import { runOpenCode, type OpenCodeRun } from "./opencode.ts";
 import { toRunnable, type Runnable } from "./openrouter.ts";
 
@@ -78,9 +78,11 @@ function cheapestRunnable(
   openRouter: Map<string, string>,
   options: PickOptions,
 ): Runnable {
-  const runnable = pick(models, options)
-    .map((model) => toRunnable(model, openRouter))
-    .find((candidate) => candidate !== undefined);
+  const runnable = bestValue(
+    pick(models, options).flatMap((model) => toRunnable(model, openRouter) ?? []),
+    (candidate) => candidate.model.score,
+    (candidate) => candidate.model.costPerTask ?? Number.POSITIVE_INFINITY,
+  );
   if (!runnable) throw new Error(`No model scoring ${options.minScore}+ is on OpenRouter.`);
   return runnable;
 }

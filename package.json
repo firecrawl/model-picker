@@ -15,7 +15,8 @@
   "description": "Find the cheapest AI model that is smart enough for the job, from live benchmarks via Firecrawl",
   "license": "MIT",
   "bin": {
-    "model-picker": "src/cli.ts"
+    "model-picker": "src/cli.ts",
+    "mp": "src/cli.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
