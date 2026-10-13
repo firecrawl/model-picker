@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { print } from "./output.ts";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -24,6 +25,30 @@ async function prepareConfig(): Promise<void> {
   // "header" keeps the router's header but drops Pi's listing of loaded resources.
   await Bun.write(settings, JSON.stringify({ quietStartup: "header" }, null, 2));
 }
+
+const CHAT_HELP = `mp chat: chat and code in Pi, each message routed to the cheapest model good enough for it.
+
+Usage: mp chat [options] [pi options] [@files...] [message]
+
+Model options (this session only, on top of ~/.config/model-picker/router.json):
+  --region <china|us|europe>  Only models from makers based there
+  --creators <A,B>            Only these makers, as Artificial Analysis names them (e.g. Anthropic,OpenAI)
+  --open                      Only open-weights models
+  --value-margin <n>          Pay up to n times the cheapest model for one better at the task (default 1.1)
+
+Common Pi options:
+  -c, --continue              Continue your last chat
+  -r, --resume                Pick a previous chat to resume
+  -p, --print <message>       Answer once and exit, without the UI
+  @file                       Attach a file or image, e.g. mp chat @screenshot.png
+
+Examples:
+  mp chat
+  mp chat --region china
+  mp chat --creators Anthropic --value-margin 2
+  mp chat @screenshot.png "what's wrong with this layout?"
+
+Needs OPENROUTER_API_KEY. Every Pi option: mp chat --pi-help`;
 
 /** Splits chat's own flags (router settings for this session) from the ones meant for Pi. */
 function splitArgs(args: string[]): { overrides: Record<string, unknown>; piArgs: string[] } {
@@ -50,8 +75,14 @@ function splitArgs(args: string[]): { overrides: Record<string, unknown>; piArgs
 
 /** Opens Pi's terminal UI with the model-picker router loaded and selected; extra args go to Pi. */
 export async function runChat(args: string[]): Promise<number> {
+  if (args.includes("--help") || args.includes("-h")) {
+    print(CHAT_HELP);
+    return 0;
+  }
   await prepareConfig();
-  const { overrides, piArgs } = splitArgs(args);
+  const { overrides, piArgs } = splitArgs(
+    args.map((arg) => (arg === "--pi-help" ? "--help" : arg)),
+  );
   const env = {
     ...(await keysFromDotEnv()),
     ...process.env,
