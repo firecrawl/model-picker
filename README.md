@@ -79,6 +79,22 @@ Add `--json` to any command for machine-readable output.
 
 OpenCode runs with `--auto`, which approves its tool calls without asking, so only build in folders you're happy for it to change.
 
+### How `build` decides which model does what
+
+```
+Any prompt ──► Planner: the cheapest model scoring 50+ (today GPT-6.1 Sol High)
+                  │ writes plan.json: a to-do list, each item labelled hard / medium / easy
+                  ▼
+               Workers: one per item, picked by a lookup (no AI)
+                  hard   (50+) ──► today GPT-6.1 Sol (High)
+                  medium (42+) ──► today GPT-6.1 Sol (Low)
+                  easy   (30+) ──► today GPT-6 Luna (High)
+```
+
+- **One AI decision, then a lookup.** The planner reads the prompt and labels each part of the work. model-picker then takes the cheapest model on the leaderboard clearing that label's score floor, filtered to what OpenRouter can run. No other model, Claude included, takes part in routing.
+- **The planner is the same for every prompt.** It's picked by the same rule as a hard step, because a wrong label sends hard work to a weak model or splits the job badly. Planning cost $0.07-0.17 per build in our tests.
+- **Models only change when the leaderboard does.** The Artificial Analysis leaderboard is fetched at most once a day. Within a build everything is fixed; a new cheaper model scoring 50+ becomes the planner from the next day's fetch. `--claude-code`, `--open` and `--max-cost` filter the candidates (with `--claude-code` the planner is Claude Opus 5.5 Medium).
+
 ## Cost
 
 A `pick` uses 20 Firecrawl credits and a `providers` lookup 5. Results are cached for 24 hours, so repeat runs are free.
