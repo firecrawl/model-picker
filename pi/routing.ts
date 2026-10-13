@@ -68,7 +68,7 @@ const EFFORTS: Record<string, ModelThinkingLevel> = {
   xhigh: "xhigh",
 };
 const EFFORT_SUFFIX = /-(low|medium|high|xhigh)$/;
-const normalize = (id: string): string => id.toLowerCase().replaceAll(/[^a-z0-9]/g, "");
+export const normalize = (id: string): string => id.toLowerCase().replaceAll(/[^a-z0-9]/g, "");
 
 /** The settings file, with `mp chat` flags (passed as JSON in the environment) on top. */
 export async function loadSettings(): Promise<z.infer<typeof settingsSchema>> {
@@ -85,9 +85,9 @@ export async function loadSettings(): Promise<z.infer<typeof settingsSchema>> {
 /** Every benchmarked model, with a measured cost, that Pi can reach through OpenRouter. */
 export async function loadCandidates(ctx: ExtensionContext): Promise<Candidates> {
   const settings = await loadSettings();
-  const allowed = new Set(settings.creators?.map((creator) => creator.toLowerCase()));
+  const allowed = new Set(settings.creators?.map(normalize));
   const regional = settings.region
-    ? new Set(REGIONS[settings.region].map((creator) => creator.toLowerCase()))
+    ? new Set<string>(REGIONS[settings.region].map(normalize))
     : undefined;
   const openRouter = new Map(
     ctx.modelRegistry
@@ -99,8 +99,9 @@ export async function loadCandidates(ctx: ExtensionContext): Promise<Candidates>
     const { costPerTask } = benchmarked;
     if (costPerTask === undefined || costPerTask <= 0 || costPerTask > settings.maxCost) return [];
     if (settings.openWeightsOnly && !benchmarked.openWeights) return [];
-    if (allowed.size > 0 && !allowed.has(benchmarked.creator.toLowerCase())) return [];
-    if (regional && !regional.has(benchmarked.creator.toLowerCase())) return [];
+    // Names compare without case, spaces or punctuation, so "Zai" matches "Z AI".
+    if (allowed.size > 0 && !allowed.has(normalize(benchmarked.creator))) return [];
+    if (regional && !regional.has(normalize(benchmarked.creator))) return [];
     const model = openRouter.get(normalize(benchmarked.slug.replace(EFFORT_SUFFIX, "")));
     if (!model) return [];
     // Artificial Analysis labels a model's top effort "Max" and gives it no slug suffix.

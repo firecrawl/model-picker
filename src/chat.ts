@@ -1,6 +1,10 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { print } from "./output.ts";
+import { z } from "zod";
+import { normalize } from "../pi/routing.ts";
+import { REGIONS } from "../pi/regions.ts";
+import { fetchModels } from "./models.ts";
+import { print, printError } from "./output.ts";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -61,30 +65,90 @@ function splitArgs(args: string[]): { overrides: Record<string, unknown>; piArgs
       if (next === undefined) throw new Error(`${arg} needs a value`);
       return next;
     };
-    if (arg === "--region") overrides.region = value();
-    else if (arg === "--creators")
+    if (arg === "--region") {
+      const region = value().toLowerCase();
+      if (!Object.hasOwn(REGIONS, region)) {
+        throw new Error(`Unknown region "${region}". Use ${Object.keys(REGIONS).join(", ")}.`);
+      }
+      overrides.region = region;
+    } else if (arg === "--creators")
       overrides.creators = value()
         .split(",")
         .map((name) => name.trim());
     else if (arg === "--open") overrides.openWeightsOnly = true;
-    else if (arg === "--value-margin") overrides.valueMargin = Number(value());
-    else if (arg !== undefined) piArgs.push(arg);
+    else if (arg === "--value-margin") {
+      const margin = Number(value());
+      if (!(margin >= 1)) throw new Error("--value-margin needs a number of at least 1, e.g. 2.");
+      overrides.valueMargin = margin;
+    } else if (arg !== undefined) piArgs.push(arg);
   }
   return { overrides, piArgs };
 }
 
 /** Opens Pi's terminal UI with the model-picker router loaded and selected; extra args go to Pi. */
+/** Letters to insert, delete or change to turn one name into the other. */
+function editDistance(a: string, b: string): number {
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j++) {
+      const substitution = (previous[j - 1] ?? 0) + (a[i - 1] === b[j - 1] ? 0 : 1);
+      current.push(Math.min((previous[j] ?? 0) + 1, (current[j - 1] ?? 0) + 1, substitution));
+    }
+    previous = current;
+  }
+  return previous[b.length] ?? 0;
+}
+
+/** Every requested maker that isn't on the leaderboard, with a suggestion where one is close. */
+async function unknownCreators(requested: readonly string[]): Promise<string[]> {
+  const known = [...new Set((await fetchModels()).map((model) => model.creator))].toSorted();
+  const keys = new Set(known.map(normalize));
+  const problems = requested
+    .filter((name) => !keys.has(normalize(name)))
+    .map((name) => {
+      const key = normalize(name);
+      const close = known.filter((maker) => {
+        const other = normalize(maker);
+        const typo = editDistance(key, other) <= Math.max(1, Math.floor(other.length / 4));
+        return key.length > 1 && (typo || other.includes(key) || key.includes(other));
+      });
+      const suggestion =
+        close.length > 0 ? ` Did you mean ${close.map((maker) => `"${maker}"`).join(" or ")}?` : "";
+      return `No model maker called "${name}".${suggestion}`;
+    });
+  return problems.length === 0 ? [] : [...problems, `Known makers: ${known.join(", ")}`];
+}
+
 export async function runChat(args: string[]): Promise<number> {
   if (args.includes("--help") || args.includes("-h")) {
     print(CHAT_HELP);
     return 0;
   }
+  const dotEnv = await keysFromDotEnv();
+  process.env.FIRECRAWL_API_KEY ??= dotEnv.FIRECRAWL_API_KEY;
+  try {
+    const { overrides, piArgs } = splitArgs(
+      args.map((arg) => (arg === "--pi-help" ? "--help" : arg)),
+    );
+    const creators = z.array(z.string()).optional().parse(overrides.creators);
+    const problems = creators ? await unknownCreators(creators) : [];
+    if (problems.length > 0) throw new Error(problems.join("\n"));
+    return await launchPi(overrides, piArgs, dotEnv);
+  } catch (error) {
+    printError(error instanceof Error ? error.message : String(error));
+    return 1;
+  }
+}
+
+async function launchPi(
+  overrides: Record<string, unknown>,
+  piArgs: string[],
+  dotEnv: Record<string, string>,
+): Promise<number> {
   await prepareConfig();
-  const { overrides, piArgs } = splitArgs(
-    args.map((arg) => (arg === "--pi-help" ? "--help" : arg)),
-  );
   const env = {
-    ...(await keysFromDotEnv()),
+    ...dotEnv,
     ...process.env,
     PI_CODING_AGENT_DIR: PI_DIR,
     MODEL_PICKER_ROUTER_OVERRIDES: JSON.stringify(overrides),
