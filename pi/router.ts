@@ -13,7 +13,9 @@ import {
   needsOf,
   TASKS,
   type Candidates,
+  type Difficulty,
   type RouterState,
+  type Task,
 } from "./routing.ts";
 
 const dollars = (usd: number): string => `$${usd.toFixed(usd < 1 ? 3 : 2)}`;
@@ -66,22 +68,48 @@ async function classify(
   };
 }
 
+/** Every model the router can send a typical message to, with the work it gets. */
+function routingTable(candidates: Candidates): { name: string; uses: string }[] {
+  const uses = new Map<string, { name: string; work: Map<Difficulty, Task[]> }>();
+  for (const difficulty of DIFFICULTIES) {
+    for (const task of TASKS) {
+      const route = choose(candidates, difficulty, task, { image: task === "vision", tokens: 0 });
+      const key = `${route.model.id}#${route.thinkingLevel}`;
+      const effort = route.thinkingLevel === "off" ? "" : ` ${route.thinkingLevel}`;
+      const entry = uses.get(key) ?? {
+        name: `${route.model.name}${effort}`,
+        work: new Map<Difficulty, Task[]>(),
+      };
+      entry.work.set(difficulty, [...(entry.work.get(difficulty) ?? []), task]);
+      uses.set(key, entry);
+    }
+  }
+  return [...uses.values()].map(({ name, work }) => ({
+    name,
+    uses: [...work.entries()]
+      .map(
+        ([difficulty, tasks]) =>
+          `${difficulty}: ${tasks.length === TASKS.length ? "all work" : tasks.join(", ")}`,
+      )
+      .join(" · "),
+  }));
+}
+
 function header(theme: Theme, candidates: Candidates | undefined): string[] {
-  const noNeeds = { image: false, tokens: 0 };
+  const table = candidates ? routingTable(candidates) : [];
+  const width = Math.max(0, ...table.map((row) => row.name.length));
   const rows = candidates
-    ? DIFFICULTIES.map((difficulty) => {
-        const route = choose(candidates, difficulty, "general", noNeeds);
-        return `  ${theme.fg("dim", difficulty.padEnd(7))}${theme.fg("dim", "→")} ${route.model.name} ${theme.fg("dim", route.thinkingLevel)}`;
-      })
+    ? table.map((row) => `  ${row.name.padEnd(width)}  ${theme.fg("dim", row.uses)}`)
     : [theme.fg("dim", "  loading the leaderboard…")];
   return [
     "",
     `  ${theme.bold(theme.fg("accent", "model-picker"))}  ${theme.fg("muted", "the cheapest good-enough model for every message")}`,
     "",
     ...rows,
+    "",
     theme.fg(
       "dim",
-      `  from ${candidates?.all.length ?? "…"} models; coding, tool, image and long-context work rank on their own benchmarks`,
+      `  ${table.length} models in use, chosen from ${candidates?.all.length ?? "…"} · each kind of work ranks on its own benchmark`,
     ),
     "",
   ];
