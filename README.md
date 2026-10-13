@@ -37,6 +37,17 @@ export FIRECRAWL_API_KEY=fc-...
 model-picker pick --min-score 45
 ```
 
+### Chat
+
+After the steps above, with Node 22.19+ installed:
+
+```sh
+export OPENROUTER_API_KEY=sk-or-...
+mp chat                                           # in the project folder you want to work in
+```
+
+Instead of exporting keys each time, you can put `FIRECRAWL_API_KEY` and `OPENROUTER_API_KEY` in a `.env` file in the model-picker folder; `chat` reads it from any directory. `mp chat --help` lists the options. See [Pi router](#pi-router-experimental) for how routing works.
+
 ### Claude Code
 
 Inside Claude Code:
