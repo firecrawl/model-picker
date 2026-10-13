@@ -24,5 +24,27 @@
     "zod": "4.6.7",
     "@earendil-works/pi-ai": "1.2.0",
     "@earendil-works/pi-coding-agent": "1.2.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/firecrawl/model-picker.git"
+  },
+  "homepage": "https://github.com/firecrawl/model-picker#readme",
+  "bugs": {
+    "url": "https://github.com/firecrawl/model-picker/issues"
+  },
+  "author": "Firecrawl",
+  "keywords": [
+    "llm",
+    "model-routing",
+    "openrouter",
+    "benchmarks",
+    "firecrawl",
+    "claude-code",
+    "pi"
+  ],
+  "engines": {
+    "bun": ">=1.4.0",
+    "node": ">=22.19.0"
   }
 }

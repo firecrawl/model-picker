@@ -16,12 +16,20 @@ Every row is a model nothing else beats on both score and cost. If a model isn't
 
 ## Install
 
-model-picker is a command-line tool plus a Claude Code skill that drives it. You need [Bun](https://bun.sh) 1.4+ and a free [Firecrawl](https://firecrawl.dev) API key.
+model-picker is a command-line tool (`model-picker`, or `mp` for short), a Claude Code skill that drives it, and an experimental chat router for [Pi](https://pi.dev).
+
+| To use | You need |
+|---|---|
+| `pick`, `providers`, `search` | [Bun](https://bun.sh) 1.4+ and a free [Firecrawl](https://firecrawl.dev) API key (`FIRECRAWL_API_KEY`) |
+| `chat` | the above, plus [Node](https://nodejs.org) 22.19+ (Pi runs on Node) and an [OpenRouter](https://openrouter.ai) key (`OPENROUTER_API_KEY`) |
+| `build` (experimental) | the above, plus [OpenCode](https://opencode.ai) on your PATH |
+
+Model usage in `chat` and `build` is billed to your OpenRouter key.
 
 ### Command line
 
 ```sh
-git clone https://github.com/OWNER/model-picker   # replace OWNER once the repo is public
+git clone https://github.com/firecrawl/model-picker
 cd model-picker
 bun install
 bun link                                          # puts `model-picker` and `mp` on your PATH
@@ -34,7 +42,7 @@ model-picker pick --min-score 45
 Inside Claude Code:
 
 ```
-/plugin marketplace add OWNER/model-picker
+/plugin marketplace add firecrawl/model-picker
 /plugin install model-picker@model-picker
 ```
 
@@ -68,7 +76,7 @@ Add `--json` to any command for machine-readable output.
 
 **Score** is the Artificial Analysis Intelligence Index (0-100; today's best models score about 55-58). **$/task** is what it costs to run one Intelligence Index task, which accounts for how many tokens a model actually burns, not just its price per token.
 
-## Building with the cheapest model per step
+## Building with the cheapest model per step (experimental)
 
 `build` needs [OpenCode](https://opencode.ai) and an `OPENROUTER_API_KEY`.
 
@@ -133,6 +141,10 @@ Pi's virtual-model API is experimental, so Pi is pinned (1.2.0).
 ## Cost
 
 A `pick` uses 20 Firecrawl credits and a `providers` lookup 5. Results are cached for 24 hours, so repeat runs are free.
+
+## Contributing
+
+The repo includes [agent-harness](https://github.com/firecrawl/model-picker/tree/main/.harness) checks: if you work on it with Claude Code, `.claude/settings.json` runs formatting, lint and typecheck after each edit and the full checks (`.harness/hooks/check-all.sh`) before the agent stops. Without Claude Code, run that script yourself before opening a pull request, plus `bun test`.
 
 ## License
 
