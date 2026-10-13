@@ -97,7 +97,13 @@ Any prompt ──► Planner: the cheapest model scoring 50+ (today GPT-6.1 Sol 
 
 ## Pi router (experimental)
 
-`pi/router.ts` is a [Pi](https://pi.dev) extension that adds a model called `model-picker/auto`. Before each message you send, a cheap model rates it hard, medium or easy, and Pi answers with the cheapest model clearing that floor (50 / 42 / 30), in the same session. Tool calls and retries within a turn stay on that turn's model, so the prompt cache survives.
+`pi/router.ts` is a [Pi](https://pi.dev) extension that adds a model called `model-picker/auto`. For each message you send:
+
+1. A cheap model labels it with a difficulty (hard, medium, easy) and a kind of work (coding, tools, vision, long-context, general).
+2. Every benchmarked model on OpenRouter is a candidate. Models that can't take the message are dropped: no image input when you attached an image, or a context window too small for the conversation.
+3. Of the rest clearing the difficulty floor (50 / 42 / 30), it takes the one best at that kind of work, ranked on that work's own benchmark (Terminal-Bench and SciCode for coding, τ²-Bench for tools, MMMU-Pro for images, LCR for long context), among models priced within `valueMargin` of the cheapest. The default is 1.1, i.e. 10%; raise it to pay more for specialists.
+
+It all happens in one session. Tool calls and retries within a turn stay on that turn's model, so the prompt cache survives. Computer use isn't ranked: the benchmark data has no computer-use score.
 
 ```sh
 model-picker chat            # in any project folder; extra options go to Pi
@@ -105,10 +111,10 @@ model-picker chat            # in any project folder; extra options go to Pi
 
 `chat` opens Pi's terminal UI with the router loaded and selected. It needs `OPENROUTER_API_KEY`, and the Firecrawl key from your environment or model-picker's own `.env`.
 
-The footer shows why each message went where it did (e.g. `hard → GPT-6.1 Sol high`) and a running savings line, e.g. `$0.42 spent · ~$3.10 on Claude Opus 5.5 · saved 86%`. The comparison prices this session's actual tokens at the baseline model's rates, so it's an estimate: the baseline would have written different responses. `/session` shows cost per model. To limit the candidates, write `~/.config/model-picker/router.json` (or point `MODEL_PICKER_ROUTER_SETTINGS` at a file):
+The footer shows why each message went where it did (e.g. `hard · coding → GPT-6.1 Sol high`) and a running savings line, e.g. `$0.42 spent · ~$3.10 on Claude Opus 5.5 · saved 86%`. The comparison prices this session's actual tokens at the baseline model's rates, so it's an estimate: the baseline would have written different responses. `/session` shows cost per model. To limit the candidates, write `~/.config/model-picker/router.json` (or point `MODEL_PICKER_ROUTER_SETTINGS` at a file):
 
 ```json
-{ "creators": ["OpenAI", "Anthropic"], "openWeightsOnly": false, "maxCost": 1, "baseline": "anthropic/claude-opus-5.5" }
+{ "creators": ["OpenAI", "Anthropic"], "openWeightsOnly": false, "maxCost": 1, "valueMargin": 2, "baseline": "anthropic/claude-opus-5.5" }
 ```
 
 Pi's virtual-model API is experimental, so Pi is pinned (1.2.0).

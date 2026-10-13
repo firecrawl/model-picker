@@ -1,109 +1,35 @@
-import {
-  calculateCost,
-  type Api,
-  type Message,
-  type Model,
-  type ModelThinkingLevel,
-} from "@earendil-works/pi-ai";
+import { calculateCost, type Api, type Message, type Model } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ExtensionContext,
-  ModelRoute,
   ModelRouteRequest,
   Theme,
 } from "@earendil-works/pi-coding-agent";
-import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { z } from "zod";
-import { bestValue, fetchModels, pick } from "../src/models.ts";
+import {
+  choose,
+  DIFFICULTIES,
+  loadCandidates,
+  loadSettings,
+  needsOf,
+  TASKS,
+  type Candidates,
+  type RouterState,
+} from "./routing.ts";
 
-// Same Intelligence Index floors as `model-picker build`.
-const FLOORS = { hard: 50, medium: 42, easy: 30 } as const;
-type Difficulty = keyof typeof FLOORS;
-type Routes = Record<Difficulty, ModelRoute<RouterState>>;
-
-interface RouterState {
-  difficulty: Difficulty;
-}
-
-const settingsSchema = z.object({
-  creators: z.array(z.string()).optional(),
-  openWeightsOnly: z.boolean().default(false),
-  maxCost: z.number().default(Number.POSITIVE_INFINITY),
-  // OpenRouter model the savings line compares against.
-  baseline: z.string().default("anthropic/claude-opus-5.5"),
-});
-const SETTINGS_FILE =
-  process.env.MODEL_PICKER_ROUTER_SETTINGS ??
-  join(homedir(), ".config", "model-picker", "router.json");
-
-const EFFORTS: Record<string, ModelThinkingLevel> = {
-  low: "low",
-  medium: "medium",
-  high: "high",
-  xhigh: "xhigh",
-};
-const EFFORT_SUFFIX = /-(low|medium|high|xhigh)$/;
 const dollars = (usd: number): string => `$${usd.toFixed(usd < 1 ? 3 : 2)}`;
-const normalize = (id: string): string => id.toLowerCase().replaceAll(/[^a-z0-9]/g, "");
 
-const CLASSIFY_PROMPT = `You route coding requests to models. Rate how much reasoning the user's latest request needs:
+const CLASSIFY_PROMPT = `You route requests in a coding assistant to models. Rate the user's latest request.
+Difficulty:
 - hard: architecture, tricky algorithms, subtle debugging, large cross-cutting changes
 - medium: ordinary features and fixes with a clear approach
 - easy: small edits, renames, styling, questions with short answers
-Reply with exactly one word: hard, medium or easy.`;
-
-async function loadSettings(): Promise<z.infer<typeof settingsSchema>> {
-  const text = await readFile(SETTINGS_FILE, "utf8").catch(() => "{}");
-  return settingsSchema.parse(JSON.parse(text));
-}
-
-/** The cheapest benchmarked model clearing each floor that Pi can reach through OpenRouter. */
-async function loadRoutes(ctx: ExtensionContext): Promise<Routes> {
-  const settings = await loadSettings();
-  const allowed = new Set(settings.creators?.map((creator) => creator.toLowerCase()));
-  const benchmarked = (await fetchModels()).filter(
-    (model) => allowed.size === 0 || allowed.has(model.creator.toLowerCase()),
-  );
-  const openRouter = new Map(
-    ctx.modelRegistry
-      .getAll()
-      .filter((model) => model.provider === "openrouter")
-      .map((model): [string, Model<Api>] => [normalize(model.id.split("/").at(-1) ?? ""), model]),
-  );
-  const routeFor = (difficulty: Difficulty): ModelRoute<RouterState> => {
-    const options = { ...settings, minScore: FLOORS[difficulty], creator: undefined };
-    const reachable = pick(benchmarked, options).flatMap((candidate) => {
-      const model = openRouter.get(normalize(candidate.slug.replace(EFFORT_SUFFIX, "")));
-      return model ? [{ candidate, model }] : [];
-    });
-    const choice = bestValue(
-      reachable,
-      ({ candidate }) => candidate.score,
-      ({ candidate }) => candidate.costPerTask,
-    );
-    if (choice) {
-      // Artificial Analysis labels a model's top effort "Max" and gives it no slug suffix.
-      const effort = EFFORT_SUFFIX.exec(choice.candidate.slug)?.[1];
-      const thinkingLevel =
-        effort === undefined
-          ? /\(Max\b/.test(choice.candidate.name)
-            ? "max"
-            : "off"
-          : EFFORTS[effort];
-      return {
-        model: choice.model,
-        thinkingLevel: thinkingLevel ?? "medium",
-        state: { difficulty },
-      };
-    }
-    throw new Error(
-      `model-picker: no ${difficulty} model (score ${FLOORS[difficulty]}+) on OpenRouter`,
-    );
-  };
-  return { hard: routeFor("hard"), medium: routeFor("medium"), easy: routeFor("easy") };
-}
+Kind of work:
+- coding: writing or changing code
+- tools: multi-step work driving tools, the terminal or a browser
+- vision: understanding images or screenshots
+- long-context: reading or reasoning over large files or documents
+- general: anything else
+Reply with exactly two words, difficulty then kind, e.g. "medium coding".`;
 
 function lastUserText(messages: readonly Message[]): string {
   const content = messages.findLast((message) => message.role === "user")?.content ?? "";
@@ -115,7 +41,7 @@ async function classify(
   ctx: ExtensionContext,
   classifier: Model<Api>,
   request: ModelRouteRequest<RouterState>,
-): Promise<Difficulty> {
+): Promise<RouterState> {
   const reply = await ctx.modelRegistry.complete(
     classifier,
     {
@@ -134,33 +60,38 @@ async function classify(
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join(" ")
     .toLowerCase();
-  if (answer.includes("hard")) return "hard";
-  return answer.includes("easy") ? "easy" : "medium";
+  return {
+    difficulty: DIFFICULTIES.find((difficulty) => answer.includes(difficulty)) ?? "medium",
+    task: TASKS.find((task) => answer.includes(task)) ?? "general",
+  };
 }
 
-function header(theme: Theme, byDifficulty: Routes | undefined): string[] {
-  const rows = byDifficulty
-    ? FLOOR_ORDER.map(
-        (difficulty) =>
-          `  ${theme.fg("dim", difficulty.padEnd(7))}${theme.fg("dim", "→")} ${byDifficulty[difficulty].model.name} ${theme.fg("dim", byDifficulty[difficulty].thinkingLevel)}`,
-      )
+function header(theme: Theme, candidates: Candidates | undefined): string[] {
+  const noNeeds = { image: false, tokens: 0 };
+  const rows = candidates
+    ? DIFFICULTIES.map((difficulty) => {
+        const route = choose(candidates, difficulty, "general", noNeeds);
+        return `  ${theme.fg("dim", difficulty.padEnd(7))}${theme.fg("dim", "→")} ${route.model.name} ${theme.fg("dim", route.thinkingLevel)}`;
+      })
     : [theme.fg("dim", "  loading the leaderboard…")];
   return [
     "",
     `  ${theme.bold(theme.fg("accent", "model-picker"))}  ${theme.fg("muted", "the cheapest good-enough model for every message")}`,
     "",
     ...rows,
+    theme.fg(
+      "dim",
+      `  from ${candidates?.all.length ?? "…"} models; coding, tool, image and long-context work rank on their own benchmarks`,
+    ),
     "",
   ];
 }
 
-const FLOOR_ORDER: readonly Difficulty[] = ["hard", "medium", "easy"];
-
 export default function modelPickerRouter(pi: ExtensionAPI): void {
-  let routes: Promise<Routes> | undefined;
-  const getRoutes = (ctx: ExtensionContext): Promise<Routes> =>
-    (routes ??= loadRoutes(ctx).catch((error: unknown) => {
-      routes = undefined;
+  let candidates: Promise<Candidates> | undefined;
+  const getCandidates = (ctx: ExtensionContext): Promise<Candidates> =>
+    (candidates ??= loadCandidates(ctx).catch((error: unknown) => {
+      candidates = undefined;
       throw error;
     }));
 
@@ -169,10 +100,10 @@ export default function modelPickerRouter(pi: ExtensionAPI): void {
     ctx.ui.setTitle("model-picker");
     // Replace Pi's header straight away; the routes fill in once the leaderboard has loaded.
     ctx.ui.setHeader((tui, theme) => {
-      let loaded: Routes | undefined;
-      getRoutes(ctx).then(
-        (byDifficulty) => {
-          loaded = byDifficulty;
+      let loaded: Candidates | undefined;
+      getCandidates(ctx).then(
+        (all) => {
+          loaded = all;
           tui.requestRender();
         },
         () => {},
@@ -213,19 +144,21 @@ export default function modelPickerRouter(pi: ExtensionAPI): void {
     id: "auto",
     name: "Auto (model-picker)",
     async route(request, ctx) {
-      const byDifficulty = await getRoutes(ctx);
+      const all = await getCandidates(ctx);
       // Tool follow-ups and retries stay on the turn's model: switching would lose the prompt cache.
       const sticky = request.failed ?? request.previous;
       if (request.reason !== "user" && request.reason !== "direct" && sticky) {
         return { model: sticky.model, thinkingLevel: sticky.thinkingLevel ?? "medium" };
       }
-      if (request.reason !== "user") return byDifficulty.easy;
+      const needs = needsOf(request.messages);
+      const cheapest = choose(all, "easy", "general", { image: false, tokens: 0 });
+      if (request.reason !== "user") return choose(all, "easy", "general", needs);
       // The cheapest easy-tier model is the classifier: one short call per user message.
-      const difficulty = await classify(ctx, byDifficulty.easy.model, request);
-      const route = byDifficulty[difficulty];
+      const { difficulty, task } = await classify(ctx, cheapest.model, request);
+      const route = choose(all, difficulty, task, needs);
       ctx.ui.setStatus(
         "model-picker-route",
-        `${difficulty} → ${route.model.name} ${route.thinkingLevel}`,
+        `${difficulty} · ${task}${needs.image ? " · image" : ""} → ${route.model.name} ${route.thinkingLevel}`,
       );
       return route;
     },

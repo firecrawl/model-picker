@@ -21,6 +21,7 @@ const pageSchema = z.object({
       is_open_weights: z.boolean(),
       performance: speedSchema,
       pricing_usd_per_1m_tokens: pricingSchema,
+      benchmarks: z.record(z.string(), z.number().nullable()).nullish(),
     }),
   ),
 });
@@ -36,6 +37,8 @@ export interface Model {
   listPrice: number | undefined;
   openWeights: boolean;
   tokensPerSecond: number | undefined;
+  /** Per-benchmark scores (e.g. terminal_bench_4_0, mmmu_pro); null where not measured. */
+  benchmarks: Record<string, number | null>;
 }
 
 type MeasuredModel = Model & { costPerTask: number };
@@ -75,6 +78,7 @@ export async function fetchModels(): Promise<Model[]> {
             listPrice: blendedPrice(row.pricing_usd_per_1m_tokens),
             openWeights: row.is_open_weights,
             tokensPerSecond: row.performance,
+            benchmarks: row.benchmarks ?? {},
           },
         ],
   );
@@ -118,15 +122,16 @@ export function pick(models: Model[], options: PickOptions): MeasuredModel[] {
 // a few percent of price isn't worth several points of intelligence.
 const VALUE_MARGIN = 1.1;
 
-/** The highest-scoring candidate priced within VALUE_MARGIN of the cheapest one. */
+/** The highest-scoring candidate priced within `margin` times the cheapest one. */
 export function bestValue<T>(
   candidates: readonly T[],
   score: (candidate: T) => number,
   cost: (candidate: T) => number,
+  margin = VALUE_MARGIN,
 ): T | undefined {
   const cheapest = Math.min(...candidates.map(cost));
   return candidates
-    .filter((candidate) => cost(candidate) <= cheapest * VALUE_MARGIN)
+    .filter((candidate) => cost(candidate) <= cheapest * margin)
     .reduce<T | undefined>(
       (best, candidate) =>
         best === undefined || score(candidate) > score(best) ? candidate : best,
