@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { callAll } from "./alexandria.ts";
-import { speedSchema } from "./models.ts";
+import { pricingSchema, speedSchema } from "./models.ts";
 
 export interface Provider {
   host: string;
@@ -16,9 +16,7 @@ const endpointsSchema = z.object({
       host: z.object({ name: z.string() }),
       intelligence_index_cost_per_task_usd: z.object({ total: z.number().nullish() }).nullish(),
       performance: speedSchema,
-      pricing_usd_per_1m_tokens: z
-        .object({ input: z.number().nullish(), output: z.number().nullish() })
-        .nullish(),
+      pricing_usd_per_1m_tokens: pricingSchema,
     }),
   ),
 });

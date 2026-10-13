@@ -32,9 +32,9 @@ Then ask Claude Code things like "which model should I use for my support bot?" 
 
 | Command | What it does |
 |---|---|
-| `pick [--min-score N] [--max-cost USD] [--open] [--vs slug]` | Cheapest models at or above a score, optionally compared with the one you use now |
+| `pick [--min-score N] [--max-cost USD] [--open] [--claude-code] [--vs slug]` | Cheapest models at or above a score, optionally compared with the one you use now. `--claude-code` limits it to the Claude models and effort levels Claude Code runs natively |
 | `providers <slug> [--sort cost\|speed]` | Every provider serving one model, by cost per task or speed |
-| `search <name>` | Find a model's slug |
+| `search <name>` | Find a model's slug. Also lists models Artificial Analysis hasn't measured a cost for yet |
 
 Add `--json` to any command for machine-readable output.
 

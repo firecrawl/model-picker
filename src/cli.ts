@@ -7,20 +7,23 @@ import { fetchProviders, type ProviderSort } from "./providers.ts";
 const USAGE = `model-picker: find the cheapest AI model that's smart enough for the job.
 Data: Artificial Analysis benchmarks via Firecrawl Alexandria. Needs FIRECRAWL_API_KEY.
 
-  model-picker pick [--min-score 40] [--max-cost 5] [--open] [--vs <slug>] [--json]
+  model-picker pick [--min-score 40] [--max-cost 5] [--open] [--claude-code] [--vs <slug>] [--json]
       Models nothing else beats on both score and cost, cheapest first.
-      --min-score  Intelligence Index floor (0-100). Top models score ~55.
-      --max-cost   Max USD to run one Intelligence Index task.
-      --open       Open-weights models only (self-hostable).
-      --vs         Compare each pick against a model you use today (e.g. claude-fable-5-1).
+      --min-score    Intelligence Index floor (0-100). Top models score ~55.
+      --max-cost     Max USD to run one Intelligence Index task.
+      --open         Open-weights models only (self-hostable).
+      --claude-code  Claude models and effort levels only: what Claude Code runs natively.
+      --vs           Compare each pick against a model you use today (e.g. claude-fable-5-1).
 
   model-picker providers <slug> [--sort cost|speed] [--json]
       Every provider serving one model, with cost per task and speed.
 
   model-picker search <text> [--json]
-      Find a model's slug by name.`;
+      Find a model's slug by name. Also lists models with no measured cost yet.`;
 
 const money = (usd: number): string => (usd < 0.1 ? `$${usd.toFixed(3)}` : `$${usd.toFixed(2)}`);
+const taskCost = (usd: number | undefined): string =>
+  usd === undefined ? "not measured" : money(usd);
 const speed = (tps: number | undefined): string =>
   tps === undefined ? "-" : `${Math.round(tps)} tok/s`;
 
@@ -36,9 +39,10 @@ function printTable(rows: string[][]): void {
     );
 }
 
-function comparison(model: Model, baseline: Model | undefined): string {
+function comparison(model: Model & { costPerTask: number }, baseline: Model | undefined): string {
   if (!baseline || model.slug === baseline.slug) return "";
   const scoreShare = Math.round((model.score / baseline.score) * 100);
+  if (baseline.costPerTask === undefined) return `${scoreShare}% of the score`;
   const ratio = baseline.costPerTask / model.costPerTask;
   const cost =
     ratio >= 1
@@ -61,6 +65,7 @@ async function runPick(values: Record<string, string | boolean | undefined>): Pr
     minScore: Number(values["min-score"] ?? 0),
     maxCost: Number(values["max-cost"] ?? Number.POSITIVE_INFINITY),
     openWeightsOnly: values.open === true,
+    creator: values["claude-code"] === true ? "Anthropic" : undefined,
   });
   if (values.json === true) {
     print(JSON.stringify({ baseline, picks }, null, 2));
@@ -86,7 +91,7 @@ async function runPick(values: Record<string, string | boolean | undefined>): Pr
   ]);
   if (baseline) {
     print(
-      `\n${baseline.name}: score ${baseline.score.toFixed(1)}, ${money(baseline.costPerTask)}/task`,
+      `\n${baseline.name}: score ${baseline.score.toFixed(1)}, ${taskCost(baseline.costPerTask)} per task`,
     );
   }
 }
@@ -143,12 +148,13 @@ async function runSearch(
     return;
   }
   printTable([
-    ["slug", "model", "score", "$/task"],
+    ["slug", "model", "score", "$/task", "list $/1M tokens"],
     ...matches.map((model) => [
       model.slug,
       model.name,
       model.score.toFixed(1),
-      money(model.costPerTask),
+      taskCost(model.costPerTask),
+      model.listPrice === undefined ? "-" : money(model.listPrice),
     ]),
   ]);
 }
@@ -162,6 +168,7 @@ const { values, positionals } = parseArgs({
     vs: { type: "string" },
     sort: { type: "string" },
     json: { type: "boolean" },
+    "claude-code": { type: "boolean" },
     help: { type: "boolean", short: "h" },
   },
 });

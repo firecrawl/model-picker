@@ -6,6 +6,10 @@ export const speedSchema = z
   .nullish()
   .transform((performance) => performance?.output_speed_tokens_per_s?.median ?? undefined);
 
+export const pricingSchema = z
+  .object({ input: z.number().nullish(), output: z.number().nullish() })
+  .nullish();
+
 const pageSchema = z.object({
   results: z.array(
     z.object({
@@ -16,6 +20,7 @@ const pageSchema = z.object({
       intelligence_index_cost_per_task_usd: z.number().nullable(),
       is_open_weights: z.boolean(),
       performance: speedSchema,
+      pricing_usd_per_1m_tokens: pricingSchema,
     }),
   ),
 });
@@ -25,9 +30,22 @@ export interface Model {
   name: string;
   creator: string;
   score: number;
-  costPerTask: number;
+  /** Undefined when Artificial Analysis hasn't measured it; list prices can't stand in, see README. */
+  costPerTask: number | undefined;
+  /** USD per 1M tokens, blended 3 input : 1 output. */
+  listPrice: number | undefined;
   openWeights: boolean;
   tokensPerSecond: number | undefined;
+}
+
+type MeasuredModel = Model & { costPerTask: number };
+
+function blendedPrice(pricing: z.infer<typeof pricingSchema>): number | undefined {
+  const input = pricing?.input;
+  const output = pricing?.output;
+  return input === undefined || input === null || output === undefined || output === null
+    ? undefined
+    : (3 * input + output) / 4;
 }
 
 // The current (non-deprecated) leaderboard is under 300 rows; four pages in one batched request covers it.
@@ -45,7 +63,7 @@ export async function fetchModels(): Promise<Model[]> {
   );
   const rows = pages.flatMap((page) => pageSchema.parse(page).results);
   return rows.flatMap((row) =>
-    row.intelligence_index === null || row.intelligence_index_cost_per_task_usd === null
+    row.intelligence_index === null
       ? []
       : [
           {
@@ -53,7 +71,8 @@ export async function fetchModels(): Promise<Model[]> {
             name: row.name,
             creator: row.creator_name,
             score: row.intelligence_index,
-            costPerTask: row.intelligence_index_cost_per_task_usd,
+            costPerTask: row.intelligence_index_cost_per_task_usd ?? undefined,
+            listPrice: blendedPrice(row.pricing_usd_per_1m_tokens),
             openWeights: row.is_open_weights,
             tokensPerSecond: row.performance,
           },
@@ -68,22 +87,26 @@ export interface PickOptions {
   minScore: number;
   maxCost: number;
   openWeightsOnly: boolean;
+  /** Restrict to one creator, e.g. Anthropic for what Claude Code can run natively. */
+  creator: string | undefined;
 }
 
 /**
  * Models no other model beats on both score and cost, cheapest first: every other model is
  * either dumber or pricier than something on this list.
  */
-export function pick(models: Model[], options: PickOptions): Model[] {
+export function pick(models: Model[], options: PickOptions): MeasuredModel[] {
   const candidates = models.filter(
-    (model) =>
-      model.score >= options.minScore &&
-      model.costPerTask <= options.maxCost &&
+    (model): model is MeasuredModel =>
+      model.costPerTask !== undefined &&
       model.costPerTask > 0 &&
-      (!options.openWeightsOnly || model.openWeights),
+      model.costPerTask <= options.maxCost &&
+      model.score >= options.minScore &&
+      (!options.openWeightsOnly || model.openWeights) &&
+      (options.creator === undefined || model.creator === options.creator),
   );
   const byCost = candidates.toSorted((a, b) => a.costPerTask - b.costPerTask || b.score - a.score);
-  const frontier: Model[] = [];
+  const frontier: MeasuredModel[] = [];
   for (const model of byCost) {
     const best = frontier.at(-1);
     if (!best || model.score >= best.score + MIN_SCORE_GAIN) frontier.push(model);
