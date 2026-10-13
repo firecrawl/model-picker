@@ -55,6 +55,7 @@ export async function writeReport(dir: string, task: string, steps: BuildStep[])
           opencodeModel: step.runnable.opencodeId,
           benchmarkScore: step.runnable.model.score,
           benchmarkCostPerTaskUsd: step.runnable.model.costPerTask,
+          opencodeSession: step.run.sessionId ?? null,
           exitCode: step.run.exitCode,
           seconds: step.run.seconds,
           usage: step.run.usage ?? null,

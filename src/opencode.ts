@@ -15,6 +15,8 @@ export interface OpenCodeRun {
   reply: string;
   /** Undefined when OpenCode's session export failed; the OpenRouter activity page still has it. */
   usage: Usage | undefined;
+  /** Kept so a failed export can be retried by hand: `opencode session export <id>`. */
+  sessionId: string | undefined;
 }
 
 const eventSchema = z.object({
@@ -67,7 +69,9 @@ function parseEvents(jsonLines: string): { sessionId: string | undefined; reply:
 // OpenCode takes its project directory from PWD, not the process cwd.
 const inDir = (dir: string) => ({ cwd: dir, env: { ...process.env, PWD: dir } });
 
-async function sessionUsage(dir: string, sessionId: string): Promise<Usage | undefined> {
+const EXPORT_ATTEMPTS = 3;
+
+async function exportUsage(dir: string, sessionId: string): Promise<Usage | undefined> {
   const exporter = Bun.spawn(["opencode", "session", "export", sessionId], {
     ...inDir(dir),
     stdout: "pipe",
@@ -89,6 +93,14 @@ async function sessionUsage(dir: string, sessionId: string): Promise<Usage | und
   };
 }
 
+async function sessionUsage(dir: string, sessionId: string): Promise<Usage | undefined> {
+  for (let attempt = 1; attempt <= EXPORT_ATTEMPTS; attempt++) {
+    const usage = await exportUsage(dir, sessionId);
+    if (usage) return usage;
+  }
+  return undefined;
+}
+
 /** One non-interactive OpenCode session in `dir`, with its cost and tokens from the session export. */
 export async function runOpenCode(
   dir: string,
@@ -105,5 +117,5 @@ export async function runOpenCode(
   const seconds = (performance.now() - started) / 1000;
   const { sessionId, reply } = parseEvents(output);
   const usage = sessionId === undefined ? undefined : await sessionUsage(dir, sessionId);
-  return { exitCode, seconds, reply, usage };
+  return { exitCode, seconds, reply, usage, sessionId };
 }
