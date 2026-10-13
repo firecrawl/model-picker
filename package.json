@@ -2,8 +2,6 @@
   "name": "model-picker",
   "type": "module",
   "devDependencies": {
-    "@earendil-works/pi-ai": "1.2.0",
-    "@earendil-works/pi-coding-agent": "1.2.0",
     "@types/bun": "1.4.3",
     "fallow": "3.33.1",
     "oxfmt": "0.73.0",
@@ -23,6 +21,8 @@
     "test": "bun test"
   },
   "dependencies": {
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "@earendil-works/pi-ai": "1.2.0",
+    "@earendil-works/pi-coding-agent": "1.2.0"
   }
 }

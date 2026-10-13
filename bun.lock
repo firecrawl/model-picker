@@ -5,11 +5,11 @@
     "": {
       "name": "demo",
       "dependencies": {
+        "@earendil-works/pi-ai": "1.2.0",
+        "@earendil-works/pi-coding-agent": "1.2.0",
         "zod": "4.6.7",
       },
       "devDependencies": {
-        "@earendil-works/pi-ai": "1.2.0",
-        "@earendil-works/pi-coding-agent": "1.2.0",
         "@types/bun": "1.4.3",
         "fallow": "3.33.1",
         "oxfmt": "0.73.0",

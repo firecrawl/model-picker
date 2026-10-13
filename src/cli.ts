@@ -27,9 +27,11 @@ Data: Artificial Analysis benchmarks via Firecrawl Alexandria. Needs FIRECRAWL_A
   model-picker search <text> [--json]
       Find a model's slug by name. Also lists models with no measured cost yet.
 
-  model-picker chat [pi options]
+  model-picker chat [--region china|us|europe] [--creators A,B] [--open] [--value-margin 2] [pi options]
       Open Pi's terminal UI with the router: each message goes to the cheapest model good
-      enough for it, in one session. Needs OPENROUTER_API_KEY. Extra options go to Pi.
+      enough for it, in one session. Needs OPENROUTER_API_KEY. The flags limit or tune the
+      models for this session, on top of ~/.config/model-picker/router.json; anything else
+      goes to Pi.
 
   model-picker build "<task>" [--dir ./out] [--report <dir>] [--open]
       Build something with the cheapest model for each step, through OpenCode + OpenRouter
@@ -48,6 +50,8 @@ Examples:
   model-picker providers glm-5-3 --sort speed            fastest provider instead
   model-picker chat                                      chat and code, routed per message
   model-picker chat --continue                           pick up your last chat session
+  model-picker chat --region china                       Chinese models only
+  model-picker chat --creators Anthropic,OpenAI          only these makers' models
   model-picker build "Build a Flappy Bird game" --dir ./flappy
                                                          build it, then read ./flappy/REPORT.md`;
 

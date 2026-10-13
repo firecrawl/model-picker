@@ -25,10 +25,39 @@ async function prepareConfig(): Promise<void> {
   await Bun.write(settings, JSON.stringify({ quietStartup: "header" }, null, 2));
 }
 
+/** Splits chat's own flags (router settings for this session) from the ones meant for Pi. */
+function splitArgs(args: string[]): { overrides: Record<string, unknown>; piArgs: string[] } {
+  const overrides: Record<string, unknown> = {};
+  const piArgs: string[] = [];
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    const value = (): string => {
+      const next = args[++index];
+      if (next === undefined) throw new Error(`${arg} needs a value`);
+      return next;
+    };
+    if (arg === "--region") overrides.region = value();
+    else if (arg === "--creators")
+      overrides.creators = value()
+        .split(",")
+        .map((name) => name.trim());
+    else if (arg === "--open") overrides.openWeightsOnly = true;
+    else if (arg === "--value-margin") overrides.valueMargin = Number(value());
+    else if (arg !== undefined) piArgs.push(arg);
+  }
+  return { overrides, piArgs };
+}
+
 /** Opens Pi's terminal UI with the model-picker router loaded and selected; extra args go to Pi. */
-export async function runChat(piArgs: string[]): Promise<number> {
+export async function runChat(args: string[]): Promise<number> {
   await prepareConfig();
-  const env = { ...(await keysFromDotEnv()), ...process.env, PI_CODING_AGENT_DIR: PI_DIR };
+  const { overrides, piArgs } = splitArgs(args);
+  const env = {
+    ...(await keysFromDotEnv()),
+    ...process.env,
+    PI_CODING_AGENT_DIR: PI_DIR,
+    MODEL_PICKER_ROUTER_OVERRIDES: JSON.stringify(overrides),
+  };
   const pi = Bun.spawn(
     [
       join(ROOT, "node_modules", ".bin", "pi"),

@@ -109,12 +109,23 @@ It all happens in one session. Tool calls and retries within a turn stay on that
 model-picker chat            # in any project folder; extra options go to Pi
 ```
 
+For one session you can narrow or tune the models with flags, on top of the settings file below:
+
+```sh
+mp chat --region china          # or us / europe; makers with an unclear home country are left out
+mp chat --creators Anthropic,OpenAI
+mp chat --open                  # open-weights models only
+mp chat --value-margin 2        # pay up to 2x the cheapest for a better-suited model
+```
+
+If a filter leaves no model above a difficulty's floor (no Chinese model scores 50+, for instance), that difficulty goes to the strongest allowed model, marked "best available" in the header and footer.
+
 `chat` opens Pi's terminal UI with the router loaded and selected. It needs `OPENROUTER_API_KEY`, and the Firecrawl key from your environment or model-picker's own `.env`.
 
 The footer shows why each message went where it did (e.g. `hard · coding → GPT-6.1 Sol high`) and a running savings line, e.g. `$0.42 spent · ~$3.10 on Claude Opus 5.5 · saved 86%`. The comparison prices this session's actual tokens at the baseline model's rates, so it's an estimate: the baseline would have written different responses. `/session` shows cost per model. To limit the candidates, write `~/.config/model-picker/router.json` (or point `MODEL_PICKER_ROUTER_SETTINGS` at a file):
 
 ```json
-{ "creators": ["OpenAI", "Anthropic"], "openWeightsOnly": false, "maxCost": 1, "valueMargin": 2, "baseline": "anthropic/claude-opus-5.5" }
+{ "region": "us", "creators": ["OpenAI", "Anthropic"], "openWeightsOnly": false, "maxCost": 1, "valueMargin": 2, "baseline": "anthropic/claude-opus-5.5" }
 ```
 
 Pi's virtual-model API is experimental, so Pi is pinned (1.2.0).

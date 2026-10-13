@@ -70,7 +70,7 @@ async function classify(
 
 /** Every model the router can send a typical message to, with the work it gets. */
 function routingTable(candidates: Candidates): { name: string; uses: string }[] {
-  const uses = new Map<string, { name: string; work: Map<Difficulty, Task[]> }>();
+  const uses = new Map<string, { name: string; work: Map<string, Task[]> }>();
   for (const difficulty of DIFFICULTIES) {
     for (const task of TASKS) {
       const route = choose(candidates, difficulty, task, { image: task === "vision", tokens: 0 });
@@ -78,9 +78,11 @@ function routingTable(candidates: Candidates): { name: string; uses: string }[] 
       const effort = route.thinkingLevel === "off" ? "" : ` ${route.thinkingLevel}`;
       const entry = uses.get(key) ?? {
         name: `${route.model.name}${effort}`,
-        work: new Map<Difficulty, Task[]>(),
+        work: new Map<string, Task[]>(),
       };
-      entry.work.set(difficulty, [...(entry.work.get(difficulty) ?? []), task]);
+      const label: Difficulty | `${Difficulty} (best available)` =
+        route.state?.bestAvailable === true ? `${difficulty} (best available)` : difficulty;
+      entry.work.set(label, [...(entry.work.get(label) ?? []), task]);
       uses.set(key, entry);
     }
   }
@@ -186,7 +188,7 @@ export default function modelPickerRouter(pi: ExtensionAPI): void {
       const route = choose(all, difficulty, task, needs);
       ctx.ui.setStatus(
         "model-picker-route",
-        `${difficulty} · ${task}${needs.image ? " · image" : ""} → ${route.model.name} ${route.thinkingLevel}`,
+        `${difficulty} · ${task}${needs.image ? " · image" : ""} → ${route.model.name} ${route.thinkingLevel}${route.state?.bestAvailable === true ? " (best available)" : ""}`,
       );
       return route;
     },
