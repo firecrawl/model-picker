@@ -188,11 +188,11 @@ async function runBuild(task: string | undefined, values: Values): Promise<void>
   }
   print(`Building in ${dir}\n`);
   const { minScore: _ignored, ...baseOptions } = pickOptions(values);
-  const steps = await build(task, dir, models, openRouter, baseOptions, (step) =>
+  const result = await build(task, dir, models, openRouter, baseOptions, (step) =>
     print(stepLine(step)),
   );
-  await writeReport(reportDir, task, steps);
-  print(`\n${summaryLine(steps)}\nReport: ${reportDir}/REPORT.md`);
+  await writeReport(reportDir, task, result);
+  print(`\n${summaryLine(result)}\nReport: ${reportDir}/REPORT.md`);
 }
 
 const { values, positionals } = parseArgs({

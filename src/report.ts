@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { BuildStep } from "./build.ts";
+import type { BuildResult, BuildStep } from "./build.ts";
 
 const thousands = (count: number): string => `${(count / 1000).toFixed(1)}k`;
 const minutes = (seconds: number): string =>
@@ -18,11 +18,12 @@ export function stepLine(step: BuildStep): string {
   return `${status} [${step.difficulty}] ${step.title}: ${runnable.model.name} · ${minutes(run.seconds)} · ${tokens} · ${dollars(run.usage?.costUsd)}`;
 }
 
-function totals(steps: BuildStep[]) {
+function totals({ steps, wallSeconds }: BuildResult) {
   const sum = (value: (step: BuildStep) => number): number =>
     steps.reduce((total, step) => total + value(step), 0);
   return {
-    seconds: sum((step) => step.run.seconds),
+    wallSeconds,
+    sessionSeconds: sum((step) => step.run.seconds),
     costUsd: steps.every((step) => step.run.usage)
       ? sum((step) => step.run.usage?.costUsd ?? 0)
       : undefined,
@@ -34,14 +35,15 @@ function totals(steps: BuildStep[]) {
   };
 }
 
-export function summaryLine(steps: BuildStep[]): string {
-  const total = totals(steps);
-  return `Total: ${minutes(total.seconds)} · ${dollars(total.costUsd)} across ${steps.length} OpenCode sessions`;
+export function summaryLine(result: BuildResult): string {
+  const total = totals(result);
+  return `Total: ${minutes(total.wallSeconds)} wall clock (${minutes(total.sessionSeconds)} of sessions) · ${dollars(total.costUsd)} across ${result.steps.length} OpenCode sessions`;
 }
 
 /** Writes report.json (every number) and REPORT.md (the table to show) into `dir`. */
-export async function writeReport(dir: string, task: string, steps: BuildStep[]): Promise<void> {
-  const total = totals(steps);
+export async function writeReport(dir: string, task: string, result: BuildResult): Promise<void> {
+  const { steps } = result;
+  const total = totals(result);
   await Bun.write(
     join(dir, "report.json"),
     JSON.stringify(
@@ -79,7 +81,7 @@ Task: ${task}
 | Step | Difficulty | Model | Time | Input | Output | Reasoning | Cache read | Cache write | Cost |
 |---|---|---|---|---|---|---|---|---|---|
 ${rows.join("\n")}
-| **Total** | | | **${minutes(total.seconds)}** | ${thousands(total.inputTokens)} | ${thousands(total.outputTokens)} | ${thousands(total.reasoningTokens)} | ${thousands(total.cacheReadTokens)} | ${thousands(total.cacheWriteTokens)} | **${dollars(total.costUsd)}** |
+| **Total** | | | **${minutes(total.wallSeconds)}** wall clock (${minutes(total.sessionSeconds)} of sessions) | ${thousands(total.inputTokens)} | ${thousands(total.outputTokens)} | ${thousands(total.reasoningTokens)} | ${thousands(total.cacheReadTokens)} | ${thousands(total.cacheWriteTokens)} | **${dollars(total.costUsd)}** |
 
 Costs and tokens come from each OpenCode session's export (OpenRouter prices). Check them against https://openrouter.ai/activity.
 `,

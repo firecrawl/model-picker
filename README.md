@@ -45,9 +45,10 @@ Add `--json` to any command for machine-readable output.
 
 `build` needs [OpenCode](https://opencode.ai) and an `OPENROUTER_API_KEY`.
 
-1. The cheapest model scoring 50+ writes `plan.json`: 3-6 steps, each tagged hard, medium or easy.
-2. Each step runs as its own OpenCode session on the cheapest model clearing that difficulty's floor (hard 50, medium 42, easy 30).
-3. `REPORT.md` and `report.json` record each step's model, time, tokens (input, output, reasoning, cache) and cost, taken from OpenCode's session export.
+1. The cheapest model scoring 50+ writes `plan.json`: as few steps as the job needs (1 for a focused edit, up to 4 for a large build). Each step is tagged hard, medium or easy, and lists the files it owns and the steps it depends on.
+2. Each step runs as its own OpenCode session on the cheapest model clearing that difficulty's floor (hard 50, medium 42, easy 30). Steps whose dependencies are done and whose files don't overlap run at the same time.
+3. Only the last step runs the app or checks screenshots; earlier steps just write code.
+4. `REPORT.md` and `report.json` record each step's model, time, tokens (input, output, reasoning, cache) and cost from OpenCode's session export, plus the build's wall-clock time and each step's session ID.
 
 OpenCode runs with `--auto`, which approves its tool calls without asking, so only build in folders you're happy for it to change.
 

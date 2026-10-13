@@ -78,8 +78,10 @@ if [ "$1" = session ]; then
 fi
 for prompt; do :; done
 case "$prompt" in
-  *"You are the planner"*) echo '{"steps":[{"title":"Engine","instructions":"x","difficulty":"hard"},{"title":"Styles","instructions":"y","difficulty":"medium"}]}' > plan.json ;;
-  *) echo "$7" >> steps.txt ;;
+  *"You are the planner"*) echo '{"steps":[{"id":1,"title":"Engine","instructions":"x","difficulty":"hard","files":["engine.js"]},{"id":2,"title":"Styles","instructions":"y","difficulty":"medium","files":["styles.css"]},{"id":3,"title":"Wire up","instructions":"z","difficulty":"easy","files":["index.html"],"dependsOn":[1,2]}]}' > plan.json ;;
+  *) echo "start $(printf '%s' "$prompt" | sed -n 's/^Your step: //p')" >> steps.txt
+     sleep 0.3
+     echo "end $(printf '%s' "$prompt" | sed -n 's/^Your step: //p')" >> steps.txt ;;
 esac
 echo '{"type":"text","sessionID":"ses_1","part":{"text":"Done."}}'
 `,
@@ -119,16 +121,17 @@ test("providers sorts cheapest first and reports the spread", async () => {
   expect(table).toContain("4.0x price spread");
 });
 
-test("build plans, gives each step the cheapest qualifying model, and reports the cost", async () => {
+test("build runs independent steps in parallel, after their dependencies, on the cheapest qualifying models", async () => {
   const dir = await mkdtemp(join(tmpdir(), "model-picker-build-"));
   const output = await run("build", "make a game", "--dir", dir);
   expect(output).toContain("[plan] Plan the build: mid");
   expect(output).toContain("[hard] Engine: mid");
   expect(output).toContain("[medium] Styles: cheap-open");
-  expect(output).toContain("Total:");
-  expect(output).toContain("$0.030");
-  expect(await Bun.file(join(dir, "steps.txt")).text()).toBe(
-    "openrouter/test/mid\nopenrouter/test/cheap-open\n",
-  );
-  expect(await Bun.file(join(dir, "REPORT.md")).text()).toContain("| **Total** |");
+  expect(output).toContain("[easy] Wire up: cheap-open");
+  expect(output).toContain("$0.040 across 4 OpenCode sessions");
+  const log = (await Bun.file(join(dir, "steps.txt")).text()).trim().split("\n");
+  // Engine and Styles share no files, so both start before either ends; Wire up waits for both.
+  expect(log.slice(0, 2).toSorted()).toEqual(["start Engine", "start Styles"]);
+  expect(log.slice(-2)).toEqual(["start Wire up", "end Wire up"]);
+  expect(await Bun.file(join(dir, "REPORT.md")).text()).toContain("wall clock");
 });
