@@ -37,14 +37,24 @@ const sessionSchema = z.object({
 });
 
 const STEP_TIMEOUT_MS = 30 * 60 * 1000;
-const EXPORT_TIMEOUT_MS = 60 * 1000;
+// Exports of long sessions run to megabytes; give them room before treating usage as unknown.
+const EXPORT_TIMEOUT_MS = 3 * 60 * 1000;
+
+// OpenCode's output can end mid-line (a killed run, a truncated export); skip what doesn't parse.
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
 
 function parseEvents(jsonLines: string): { sessionId: string | undefined; reply: string } {
   let sessionId: string | undefined;
   let reply = "";
   for (const line of jsonLines.split("\n")) {
     if (!line.startsWith("{")) continue;
-    const parsed = eventSchema.safeParse(JSON.parse(line));
+    const parsed = eventSchema.safeParse(parseJson(line));
     if (!parsed.success) continue;
     const event = parsed.data;
     sessionId ??= event.sessionID;
@@ -66,7 +76,7 @@ async function sessionUsage(dir: string, sessionId: string): Promise<Usage | und
   });
   const output = await new Response(exporter.stdout).text();
   if ((await exporter.exited) !== 0) return undefined;
-  const parsed = sessionSchema.safeParse(JSON.parse(output));
+  const parsed = sessionSchema.safeParse(parseJson(output));
   if (!parsed.success) return undefined;
   const { cost, tokens } = parsed.data.info;
   return {
