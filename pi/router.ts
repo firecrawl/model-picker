@@ -4,6 +4,7 @@ import type {
   ExtensionContext,
   ModelRoute,
   ModelRouteRequest,
+  Theme,
 } from "@earendil-works/pi-coding-agent";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -113,18 +114,55 @@ async function classify(
   return answer.includes("easy") ? "easy" : "medium";
 }
 
+function header(theme: Theme, byDifficulty: Routes | undefined): string[] {
+  const rows = byDifficulty
+    ? FLOOR_ORDER.map(
+        (difficulty) =>
+          `  ${theme.fg("dim", difficulty.padEnd(7))}${theme.fg("dim", "→")} ${byDifficulty[difficulty].model.name} ${theme.fg("dim", byDifficulty[difficulty].thinkingLevel)}`,
+      )
+    : [theme.fg("dim", "  loading the leaderboard…")];
+  return [
+    "",
+    `  ${theme.bold(theme.fg("accent", "model-picker"))}  ${theme.fg("muted", "the cheapest good-enough model for every message")}`,
+    "",
+    ...rows,
+    "",
+  ];
+}
+
+const FLOOR_ORDER: readonly Difficulty[] = ["hard", "medium", "easy"];
+
 export default function modelPickerRouter(pi: ExtensionAPI): void {
   let routes: Promise<Routes> | undefined;
+  const getRoutes = (ctx: ExtensionContext): Promise<Routes> =>
+    (routes ??= loadRoutes(ctx).catch((error: unknown) => {
+      routes = undefined;
+      throw error;
+    }));
+
+  pi.on("session_start", (_event, ctx) => {
+    if (ctx.mode !== "tui") return;
+    ctx.ui.setTitle("model-picker");
+    // Replace Pi's header straight away; the routes fill in once the leaderboard has loaded.
+    ctx.ui.setHeader((tui, theme) => {
+      let loaded: Routes | undefined;
+      getRoutes(ctx).then(
+        (byDifficulty) => {
+          loaded = byDifficulty;
+          tui.requestRender();
+        },
+        () => {},
+      );
+      return { render: () => header(theme, loaded), invalidate() {} };
+    });
+  });
+
   pi.registerVirtualModel<RouterState>({
     provider: "model-picker",
     id: "auto",
     name: "Auto (model-picker)",
     async route(request, ctx) {
-      routes ??= loadRoutes(ctx).catch((error: unknown) => {
-        routes = undefined;
-        throw error;
-      });
-      const byDifficulty = await routes;
+      const byDifficulty = await getRoutes(ctx);
       // Tool follow-ups and retries stay on the turn's model: switching would lose the prompt cache.
       const sticky = request.failed ?? request.previous;
       if (request.reason !== "user" && request.reason !== "direct" && sticky) {
