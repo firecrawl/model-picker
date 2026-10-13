@@ -11,8 +11,19 @@ const EFFORT_SUFFIX = /-(low|medium|high|xhigh)$/;
 const normalize = (id: string): string => id.toLowerCase().replaceAll(/[^a-z0-9]/g, "");
 
 /** OpenRouter models OpenCode can run, keyed by normalized name without the vendor prefix. */
+// A cold OpenCode background service answers `models` with exit 0 and no output; later calls work.
+const LIST_ATTEMPTS = 3;
+
+async function listModels(): Promise<string> {
+  for (let attempt = 1; ; attempt++) {
+    const output = await Bun.$`opencode models`.quiet().nothrow().text();
+    if (output.trim() !== "" || attempt === LIST_ATTEMPTS) return output;
+    await Bun.sleep(1000);
+  }
+}
+
 export async function openRouterModels(): Promise<Map<string, string>> {
-  const output = await Bun.$`opencode models`.quiet().nothrow().text();
+  const output = await listModels();
   const ids = new Map<string, string>();
   for (const line of output.split("\n")) {
     const id = line.trim();
