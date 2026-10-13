@@ -1,0 +1,19 @@
+{
+  "name": "model-picker",
+  "owner": {
+    "name": "Firecrawl"
+  },
+  "metadata": {
+    "description": "Find the cheapest AI model that's smart enough for the job"
+  },
+  "plugins": [
+    {
+      "name": "model-picker",
+      "description": "Pick the cheapest model and provider for a task from live benchmarks, via Firecrawl Alexandria",
+      "version": "0.1.0",
+      "source": "./",
+      "strict": false,
+      "skills": ["./skills/model-picker"]
+    }
+  ]
+}

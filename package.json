@@ -1,0 +1,25 @@
+{
+  "name": "model-picker",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "1.4.3",
+    "fallow": "3.33.1",
+    "oxfmt": "0.73.0",
+    "oxlint": "1.88.0",
+    "oxlint-tsgolint": "7.0.2004",
+    "typescript": "7.0.2"
+  },
+  "version": "0.1.0",
+  "description": "Find the cheapest AI model that is smart enough for the job, from live benchmarks via Firecrawl",
+  "license": "MIT",
+  "bin": {
+    "model-picker": "src/cli.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}

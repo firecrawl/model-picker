@@ -1,0 +1,16 @@
+{
+  "edit": [
+    {
+      "match": "\\.(ts|tsx|mts|cts)$",
+      "format": "bunx oxfmt \"$1\"",
+      "lint": "bunx oxlint --type-aware --deny-warnings \"$1\""
+    }
+  ],
+  "check": [
+    "if jq -e .scripts.typecheck package.json >/dev/null; then bun run typecheck; else bunx tsc --noEmit --strict --noUncheckedIndexedAccess; fi",
+    "bunx oxlint --type-aware --deny-warnings .",
+    "bunx fallow dead-code || { echo 'Unused code: delete it, or import it from an entry point if it is meant to be used.'; exit 1; }",
+    "bunx fallow dupes --threshold 0.01 || { echo 'Duplicated code: extract it into one shared function and reuse it.'; exit 1; }",
+    ".harness/check-pins.sh"
+  ]
+}
