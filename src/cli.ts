@@ -35,7 +35,21 @@ Data: Artificial Analysis benchmarks via Firecrawl Alexandria. Needs FIRECRAWL_A
       Build something with the cheapest model for each step, through OpenCode + OpenRouter
       (needs OPENROUTER_API_KEY): a capable model writes plan.json, then each step goes to
       the cheapest model good enough for its difficulty. Writes REPORT.md and report.json
-      with every step's model, time, tokens and cost.`;
+      with every step's model, time, tokens and cost.
+
+Examples:
+  model-picker pick --min-score 45                       cheapest models scoring 45+
+  model-picker pick --min-score 45 --vs claude-fable-5-1 what you'd save against Fable 5.1
+  model-picker pick --open --min-score 35                self-hostable models only
+  model-picker pick --claude-code --vs claude-opus-5-5   cheaper Claude settings for Claude Code
+  model-picker pick --min-score 42 --max-cost 0.2 --json machine-readable, capped at $0.20/task
+  model-picker search sol                                find slugs, e.g. gpt-6-1-sol-high
+  model-picker providers glm-5-3                         cheapest provider for GLM-5.3
+  model-picker providers glm-5-3 --sort speed            fastest provider instead
+  model-picker chat                                      chat and code, routed per message
+  model-picker chat --continue                           pick up your last chat session
+  model-picker build "Build a Flappy Bird game" --dir ./flappy
+                                                         build it, then read ./flappy/REPORT.md`;
 
 const money = (usd: number): string => (usd < 0.1 ? `$${usd.toFixed(3)}` : `$${usd.toFixed(2)}`);
 const taskCost = (usd: number | undefined): string =>
@@ -221,7 +235,8 @@ const { values, positionals } = parseArgs({
 
 const [command, argument] = positionals;
 try {
-  if (command === "pick") await runPick(values);
+  if (values.help === true) print(USAGE);
+  else if (command === "pick") await runPick(values);
   else if (command === "providers") await runProviders(argument, values);
   else if (command === "search") await runSearch(argument, values);
   else if (command === "build") await runBuild(argument, values);
