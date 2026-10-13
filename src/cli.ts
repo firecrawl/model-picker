@@ -4,6 +4,7 @@ import { fetchModels, pick, type Model, type PickOptions } from "./models.ts";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { build } from "./build.ts";
+import { runChat } from "./chat.ts";
 import { openRouterModels } from "./openrouter.ts";
 import { print, printError } from "./output.ts";
 import { fetchProviders, type ProviderSort } from "./providers.ts";
@@ -25,6 +26,10 @@ Data: Artificial Analysis benchmarks via Firecrawl Alexandria. Needs FIRECRAWL_A
 
   model-picker search <text> [--json]
       Find a model's slug by name. Also lists models with no measured cost yet.
+
+  model-picker chat [pi options]
+      Open Pi's terminal UI with the router: each message goes to the cheapest model good
+      enough for it, in one session. Needs OPENROUTER_API_KEY. Extra options go to Pi.
 
   model-picker build "<task>" [--dir ./out] [--report <dir>] [--open]
       Build something with the cheapest model for each step, through OpenCode + OpenRouter
@@ -194,6 +199,9 @@ async function runBuild(task: string | undefined, values: Values): Promise<void>
   await writeReport(reportDir, task, result);
   print(`\n${summaryLine(result)}\nReport: ${reportDir}/REPORT.md`);
 }
+
+// `chat` hands every remaining argument to Pi, so it skips this CLI's own option parsing.
+if (process.argv[2] === "chat") process.exit(await runChat(process.argv.slice(3)));
 
 const { values, positionals } = parseArgs({
   allowPositionals: true,

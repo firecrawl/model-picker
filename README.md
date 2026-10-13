@@ -100,10 +100,10 @@ Any prompt ──► Planner: the cheapest model scoring 50+ (today GPT-6.1 Sol 
 `pi/router.ts` is a [Pi](https://pi.dev) extension that adds a model called `model-picker/auto`. Before each message you send, a cheap model rates it hard, medium or easy, and Pi answers with the cheapest model clearing that floor (50 / 42 / 30), in the same session. Tool calls and retries within a turn stay on that turn's model, so the prompt cache survives.
 
 ```sh
-bun install
-FIRECRAWL_API_KEY=fc-... OPENROUTER_API_KEY=sk-or-... \
-  bunx pi -e ./pi/router.ts --model model-picker/auto
+model-picker chat            # in any project folder; extra options go to Pi
 ```
+
+`chat` opens Pi's terminal UI with the router loaded and selected. It needs `OPENROUTER_API_KEY`, and the Firecrawl key from your environment or model-picker's own `.env`.
 
 The footer shows which model answered, and `/session` shows cost per model. To limit the candidates, write `~/.config/model-picker/router.json` (or point `MODEL_PICKER_ROUTER_SETTINGS` at a file):
 
