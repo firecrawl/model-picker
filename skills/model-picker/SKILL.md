@@ -1,11 +1,11 @@
 ---
 name: model-picker
-description: Find the cheapest AI model that is smart enough for a task, and the cheapest provider to run it on, from live Artificial Analysis benchmarks via Firecrawl. Use when the user asks which model to use, how to cut their LLM or API bill, whether a cheaper model would do, which provider is cheapest or fastest for a model, or which open-weights model to self-host.
+description: Find the cheapest AI model that is smart enough for a task, and the cheapest provider to run it on, from live Artificial Analysis benchmarks via Firecrawl. Use when the user asks which model to use, how to cut their LLM or API bill, whether a cheaper model would do, which provider is cheapest or fastest for a model, which open-weights model to self-host, or wants something built with the cheapest model for each step.
 ---
 
 # Model picker
 
-The CLI is `src/cli.ts` two directories above this skill's base directory; the commands below write it as `bun src/cli.ts`, so run them from there or use the full path. It needs `FIRECRAWL_API_KEY` (free at https://firecrawl.dev). Results are cached for 12 hours, so repeat runs cost nothing.
+The CLI is `src/cli.ts` two directories above this skill's base directory; the commands below write it as `bun src/cli.ts`, so run them from there or use the full path. If that directory has no `node_modules`, run `bun install` there first (a plugin install doesn't). It needs `FIRECRAWL_API_KEY` (free at https://firecrawl.dev). Results are cached for 12 hours, so repeat runs cost nothing.
 
 ## 1. Turn the task into a score floor
 
@@ -38,4 +38,14 @@ bun src/cli.ts providers <slug> --sort speed
 
 Cost per task includes how many tokens each provider's setup actually burns, so it can rank providers differently from list prices.
 
-Add `--json` to any command to read the numbers programmatically.
+## 4. Build with the cheapest model per step
+
+When the user wants something built cheaply, rather than just a recommendation:
+
+```bash
+bun src/cli.ts build "<task>" --dir <folder>
+```
+
+A capable model writes plan.json, then each step runs in OpenCode on the cheapest model good enough for its difficulty, in parallel where steps don't share files. It needs OpenCode on the PATH and `OPENROUTER_API_KEY`, and spends real money on that key, so confirm with the user first. Afterwards, show them `<folder>/REPORT.md`: each step's model, time, tokens and cost, plus a per-model breakdown.
+
+Add `--json` to `pick`, `providers` and `search` to read the numbers programmatically.

@@ -14,19 +14,46 @@ score  $/task  speed     model                         vs Claude Fable 5.1
 
 Every row is a model nothing else beats on both score and cost. If a model isn't listed, something cheaper is at least as smart.
 
-## Setup
+## Install
 
-1. Get a free Firecrawl API key at [firecrawl.dev](https://firecrawl.dev) and `export FIRECRAWL_API_KEY=fc-...`
-2. Clone and install: `git clone <this repo> && cd model-picker && bun install`
+model-picker is a command-line tool plus a Claude Code skill that drives it. You need [Bun](https://bun.sh) 1.4+ and a free [Firecrawl](https://firecrawl.dev) API key.
 
-### As a Claude Code skill
+### Command line
+
+```sh
+git clone https://github.com/OWNER/model-picker   # replace OWNER once the repo is public
+cd model-picker
+bun install
+bun link                                          # puts `model-picker` on your PATH
+export FIRECRAWL_API_KEY=fc-...
+model-picker pick --min-score 45
+```
+
+### Claude Code
+
+Inside Claude Code:
 
 ```
-/plugin marketplace add <this repo>
+/plugin marketplace add OWNER/model-picker
 /plugin install model-picker@model-picker
 ```
 
-Then ask Claude Code things like "which model should I use for my support bot?" or "find me a cheaper provider for GLM-5.3".
+Set `FIRECRAWL_API_KEY` in the shell you start Claude Code from. Then ask things like "which model should I use for my support bot?", "find me a cheaper provider for GLM-5.3" or "build this with the cheapest models".
+
+### For `build`
+
+`build` also needs [OpenCode](https://opencode.ai) on your PATH and an [OpenRouter](https://openrouter.ai) key in `OPENROUTER_API_KEY`; OpenCode reads it from the environment. The models' usage is billed to that OpenRouter key.
+
+## How it picks
+
+It always picks the cheapest model that clears a score floor; there's nothing to switch on to make it prefer cheap models. A model at a given reasoning effort counts as its own row (e.g. `gpt-6-1-sol-low` and `gpt-6-1-sol-high`), so picking a row also picks the effort level. To steer it:
+
+- `--min-score` raises or lowers the floor for `pick` (`build` uses hard 50, medium 42, easy 30).
+- `--max-cost` caps the benchmark cost per task.
+- `--open` limits it to open-weights models.
+- `--claude-code` limits it to Claude models and effort levels.
+
+`--max-cost`, `--open` and `--claude-code` also apply to `build`.
 
 ## Commands
 
