@@ -18,11 +18,10 @@ export function stepLine(step: BuildStep): string {
   return `${status} [${step.difficulty}] ${step.title}: ${runnable.model.name} · ${minutes(run.seconds)} · ${tokens} · ${dollars(run.usage?.costUsd)}`;
 }
 
-function totals({ steps, wallSeconds }: BuildResult) {
+function usageTotals(steps: BuildStep[]) {
   const sum = (value: (step: BuildStep) => number): number =>
     steps.reduce((total, step) => total + value(step), 0);
   return {
-    wallSeconds,
     sessionSeconds: sum((step) => step.run.seconds),
     costUsd: steps.every((step) => step.run.usage)
       ? sum((step) => step.run.usage?.costUsd ?? 0)
@@ -35,6 +34,26 @@ function totals({ steps, wallSeconds }: BuildResult) {
   };
 }
 
+const totals = ({ steps, wallSeconds }: BuildResult) => ({ wallSeconds, ...usageTotals(steps) });
+
+/** One row per model: what it was used for, its tokens and cost, and its share of the bill. */
+function byModel(steps: BuildStep[], totalCost: number | undefined) {
+  const groups = Map.groupBy(steps, (step) => step.runnable.opencodeId);
+  return [...groups.entries()].map(([opencodeModel, modelSteps]) => {
+    const usage = usageTotals(modelSteps);
+    return {
+      model: modelSteps[0]?.runnable.model.name ?? opencodeModel,
+      opencodeModel,
+      usedFor: modelSteps.map((step) => `${step.difficulty}: ${step.title}`),
+      ...usage,
+      shareOfCost:
+        usage.costUsd === undefined || totalCost === undefined || totalCost === 0
+          ? undefined
+          : usage.costUsd / totalCost,
+    };
+  });
+}
+
 export function summaryLine(result: BuildResult): string {
   const total = totals(result);
   return `Total: ${minutes(total.wallSeconds)} wall clock (${minutes(total.sessionSeconds)} of sessions) · ${dollars(total.costUsd)} across ${result.steps.length} OpenCode sessions`;
@@ -44,12 +63,14 @@ export function summaryLine(result: BuildResult): string {
 export async function writeReport(dir: string, task: string, result: BuildResult): Promise<void> {
   const { steps } = result;
   const total = totals(result);
+  const models = byModel(steps, total.costUsd);
   await Bun.write(
     join(dir, "report.json"),
     JSON.stringify(
       {
         task,
         total,
+        byModel: models,
         steps: steps.map((step) => ({
           title: step.title,
           difficulty: step.difficulty,
@@ -82,6 +103,12 @@ Task: ${task}
 |---|---|---|---|---|---|---|---|---|---|
 ${rows.join("\n")}
 | **Total** | | | **${minutes(total.wallSeconds)}** wall clock (${minutes(total.sessionSeconds)} of sessions) | ${thousands(total.inputTokens)} | ${thousands(total.outputTokens)} | ${thousands(total.reasoningTokens)} | ${thousands(total.cacheReadTokens)} | ${thousands(total.cacheWriteTokens)} | **${dollars(total.costUsd)}** |
+
+## By model
+
+| Model | Used for | Time | Input | Output | Reasoning | Cache read | Cache write | Cost | Share |
+|---|---|---|---|---|---|---|---|---|---|
+${models.map((row) => `| ${row.model} | ${row.usedFor.join("<br>")} | ${minutes(row.sessionSeconds)} | ${thousands(row.inputTokens)} | ${thousands(row.outputTokens)} | ${thousands(row.reasoningTokens)} | ${thousands(row.cacheReadTokens)} | ${thousands(row.cacheWriteTokens)} | ${dollars(row.costUsd)} | ${row.shareOfCost === undefined ? "-" : `${Math.round(row.shareOfCost * 100)}%`} |`).join("\n")}
 
 Costs and tokens come from each OpenCode session's export (OpenRouter prices). Check them against https://openrouter.ai/activity.
 `,

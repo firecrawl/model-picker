@@ -133,5 +133,7 @@ test("build runs independent steps in parallel, after their dependencies, on the
   // Engine and Styles share no files, so both start before either ends; Wire up waits for both.
   expect(log.slice(0, 2).toSorted()).toEqual(["start Engine", "start Styles"]);
   expect(log.slice(-2)).toEqual(["start Wire up", "end Wire up"]);
-  expect(await Bun.file(join(dir, "REPORT.md")).text()).toContain("wall clock");
+  const report = await Bun.file(join(dir, "REPORT.md")).text();
+  expect(report).toContain("wall clock");
+  expect(report).toContain("| cheap-open | medium: Styles<br>easy: Wire up |");
 });
