@@ -16,15 +16,17 @@ Every row is a model nothing else beats on both score and cost. If a model isn't
 
 ## Install
 
-model-picker is a command-line tool (`model-picker`, or `mp` for short), a Claude Code skill that drives it, and an experimental chat router for [Pi](https://pi.dev).
+model-picker is a command-line tool (`model-picker`, or `mp` for short), a Claude Code skill that drives it, and an experimental chat router for [Pi](https://pi.dev). Both ways of running models use Pi: `build` runs each step as its own Pi session, and `chat` runs inside one Pi session, switching models as you go. `build` can use [OpenCode](https://opencode.ai) instead with `--harness opencode`.
 
 | To use | You need |
 |---|---|
 | `pick`, `providers`, `search` | [Bun](https://bun.sh) 1.4+ and a free [Firecrawl](https://firecrawl.dev) API key (`FIRECRAWL_API_KEY`) |
 | `chat` | the above, plus [Node](https://nodejs.org) 22.19+ (Pi runs on Node) and an [OpenRouter](https://openrouter.ai) key (`OPENROUTER_API_KEY`) |
-| `build` (experimental) | the above, plus [OpenCode](https://opencode.ai) on your PATH |
+| `build` (experimental) | the same as `chat`; [OpenCode](https://opencode.ai) on your PATH only for `--harness opencode` |
 
 Model usage in `chat` and `build` is billed to your OpenRouter key.
+
+Optional for `chat` and `build`: a [SubQ](https://subq.ai) key (`SUBQ_API_KEY`). With it, [SubQ Snap](#labelling-with-subq-snap-optional), a decision model, labels the work instead of a GPT model.
 
 ### Command line
 
@@ -46,7 +48,7 @@ export OPENROUTER_API_KEY=sk-or-...
 mp chat                                           # in the project folder you want to work in
 ```
 
-Instead of exporting keys each time, you can put `FIRECRAWL_API_KEY` and `OPENROUTER_API_KEY` in a `.env` file in the model-picker folder; `chat` reads it from any directory. `mp chat --help` lists the options. See [Pi router](#pi-router-experimental) for how routing works.
+Instead of exporting keys each time, you can put `FIRECRAWL_API_KEY`, `OPENROUTER_API_KEY` and `SUBQ_API_KEY` in a `.env` file in the model-picker folder; `chat` reads it from any directory. `mp chat --help` lists the options. See [Pi router](#pi-router-experimental) for how routing works.
 
 ### Claude Code
 
@@ -61,7 +63,7 @@ Set `FIRECRAWL_API_KEY` in the shell you start Claude Code from. Then ask things
 
 ### For `build`
 
-`build` also needs [OpenCode](https://opencode.ai) on your PATH and an [OpenRouter](https://openrouter.ai) key in `OPENROUTER_API_KEY`; OpenCode reads it from the environment. The models' usage is billed to that OpenRouter key.
+`build` needs the same as `chat`: Node 22.19+ and an [OpenRouter](https://openrouter.ai) key in `OPENROUTER_API_KEY`. It runs each step in Pi, which `bun install` already installed. With `--harness opencode` it uses [OpenCode](https://opencode.ai) instead, which must be on your PATH. The models' usage is billed to the OpenRouter key either way.
 
 ## How it picks
 
@@ -81,7 +83,7 @@ It picks the cheapest model that clears a score floor, with one exception: a mod
 | `pick [--min-score N] [--max-cost USD] [--open] [--claude-code] [--vs slug]` | Cheapest models at or above a score, optionally compared with the one you use now. `--claude-code` limits it to the Claude models and effort levels Claude Code runs natively |
 | `providers <slug> [--sort cost\|speed]` | Every provider serving one model, by cost per task or speed |
 | `search <name>` | Find a model's slug. Also lists models Artificial Analysis hasn't measured a cost for yet |
-| `build "<task>" [--dir ./out] [--report dir]` | Build something with the cheapest good-enough model per step, through [OpenCode](https://opencode.ai) and OpenRouter, and write a report of every step's model, time, tokens and cost |
+| `build "<task>" [--dir ./out] [--report dir] [--harness pi\|opencode] [--planner-min-score N]` | Build something with the cheapest good-enough model per step, through Pi (or [OpenCode](https://opencode.ai)) and OpenRouter, and write a report of every step's model, time, tokens and cost |
 
 Add `--json` to any command for machine-readable output.
 
@@ -89,40 +91,54 @@ Add `--json` to any command for machine-readable output.
 
 ## Building with the cheapest model per step (experimental)
 
-`build` needs [OpenCode](https://opencode.ai) and an `OPENROUTER_API_KEY`.
+`build` needs an `OPENROUTER_API_KEY`. Each step runs in Pi by default, or in [OpenCode](https://opencode.ai) with `--harness opencode`; the report says which.
 
-1. The cheapest model scoring 50+ writes `plan.json`: as few steps as the job needs (1 for a focused edit, up to 4 for a large build). Each step is tagged hard, medium or easy, and lists the files it owns and the steps it depends on.
-2. Each step runs as its own OpenCode session on the cheapest model clearing that difficulty's floor (hard 50, medium 42, easy 30). Steps whose dependencies are done and whose files don't overlap run at the same time.
-3. Only the last step runs the app or checks screenshots; earlier steps just write code.
-4. `REPORT.md` and `report.json` record each step's model, time, tokens (input, output, reasoning, cache) and cost from OpenCode's session export, plus the build's wall-clock time and each step's session ID.
+1. The cheapest model scoring 50+ writes `plan.json`: as few steps as the job needs (1 for a focused edit, up to 4 for a large build). Each step lists the files it owns and the steps it depends on.
+2. Each step is labelled hard, medium or easy and given a kind of work (coding, 3d, general and so on): by SubQ Snap if `SUBQ_API_KEY` is set, otherwise by the planner, which then labels difficulty only.
+3. Each step runs as its own Pi (or OpenCode) session on the model clearing that difficulty's floor (hard 50, medium 42, easy 30) that's best at its kind of work, among models within 10% of the cheapest. Steps whose dependencies are done and whose files don't overlap run at the same time.
+4. Only the last step runs the app or checks screenshots; earlier steps just write code.
+5. `REPORT.md` and `report.json` record the harness and each step's label (and Snap's confidence), model, time, tokens (input, output, reasoning, cache) and cost, from Pi's session usage or OpenCode's session export, plus the build's wall-clock time and each step's session ID.
 
-OpenCode runs with `--auto`, which approves its tool calls without asking, so only build in folders you're happy for it to change.
+Both harnesses run tool calls without asking (Pi always does in print mode; OpenCode runs with `--auto`), so only build in folders you're happy for it to change.
+
+Pi refreshes its model catalog only when asked, so model-picker runs `pi update --models` at most once a day before `build` and `chat`; otherwise models released since the last refresh would be missing.
 
 ### How `build` decides which model does what
 
 ```
 Any prompt ──► Planner: the cheapest model scoring 50+ (today GPT-6.1 Sol High)
-                  │ writes plan.json: a to-do list, each item labelled hard / medium / easy
+                  │ writes plan.json: a to-do list
+                  ▼
+               SubQ Snap: labels each item hard / medium / easy and a kind of work
+                  │ (without a SubQ key, the planner labels difficulty instead)
                   ▼
                Workers: one per item, picked by a lookup (no AI)
-                  hard   (50+) ──► today GPT-6.1 Sol (High)
-                  medium (42+) ──► today GPT-6.1 Sol (Low)
-                  easy   (30+) ──► today GPT-6 Luna (High)
+                  hard   (50+) ──► e.g. GPT-6.1 Sol (High)
+                  medium (42+) ──► e.g. MiMo-V2.6-Pro or GPT-6.1 Sol (Low)
+                  easy   (30+) ──► e.g. GPT-6 Luna (High)
 ```
 
-- **One AI decision, then a lookup.** The planner reads the prompt and labels each part of the work. model-picker then takes the cheapest model on the leaderboard clearing that label's score floor, filtered to what OpenRouter can run. No other model, Claude included, takes part in routing.
-- **The planner is the same for every prompt.** It's picked by the same rule as a hard step, because a wrong label sends hard work to a weak model or splits the job badly. Planning cost $0.07-0.17 per build in our tests.
+- **AI labels the work, a lookup picks the model.** The planner splits the job; Snap (or the planner) labels each part. model-picker then takes the leaderboard models clearing that label's score floor that OpenRouter can run, and of those priced within 10% of the cheapest, the one best at that kind of work. No model picks another model.
+- **The planner is the same for every prompt.** By default it's picked by the same rule as a hard step (50+), because a bad split hurts every step after it. `--planner-min-score` changes its floor without touching the steps' floors, e.g. `--planner-min-score 42` to plan with a cheaper model now that Snap does the labelling. Planning cost $0.07-0.17 per build in our tests.
 - **Models only change when the leaderboard does.** The Artificial Analysis leaderboard is fetched at most once a day. Within a build everything is fixed; a new cheaper model scoring 50+ becomes the planner from the next day's fetch. `--claude-code`, `--open` and `--max-cost` filter the candidates (with `--claude-code` the planner is Claude Opus 5.5 Medium).
+
+### Labelling with SubQ Snap (optional)
+
+[SubQ Snap](https://subq.ai) (`subq-snap-preview`) is a decision model: it answers multiple-choice questions rather than writing text, at $0.05 per million input tokens with free output. With `SUBQ_API_KEY` set, it answers two questions for every build step and chat message: how hard is it, and what kind of work is it? It also gives its confidence; under 60%, the work goes one tier up, so an unsure "medium" runs as hard. The threshold isn't tuned on labelled data yet.
+
+This keeps a GPT model from labelling the work that GPT models then compete for, reads the whole message rather than its first 8,000 characters, and costs a fraction of a cent per build.
 
 ## Pi router (experimental)
 
 `pi/router.ts` is a [Pi](https://pi.dev) extension that adds a model called `model-picker/auto`. For each message you send:
 
-1. A cheap model labels it with a difficulty (hard, medium, easy) and a kind of work (coding, tools, vision, long-context, general).
+1. SubQ Snap (with `SUBQ_API_KEY`), or else the cheapest easy-tier model, labels it with a difficulty (hard, medium, easy) and a kind of work (coding, tools, vision, long-context, 3d, general).
 2. Every benchmarked model on OpenRouter is a candidate. Models that can't take the message are dropped: no image input when you attached an image, or a context window too small for the conversation.
-3. Of the rest clearing the difficulty floor (50 / 42 / 30), it takes the one best at that kind of work, ranked on that work's own benchmark (Terminal-Bench and SciCode for coding, τ²-Bench for tools, MMMU-Pro for images, LCR for long context), among models priced within `valueMargin` of the cheapest. The default is 1.1, i.e. 10%; raise it to pay more for specialists.
+3. Of the rest clearing the difficulty floor (50 / 42 / 30), it takes the one best at that kind of work, ranked on that work's own benchmark (Terminal-Bench and SciCode for coding, τ²-Bench for tools, MMMU-Pro for images, LCR for long context, [MineBench](https://minebench.ai/leaderboard) for 3D), among models priced within `valueMargin` of the cheapest. The default is 1.1, i.e. 10%; raise it to pay more for specialists.
 
 It all happens in one session. Tool calls and retries within a turn stay on that turn's model, so the prompt cache survives. Computer use isn't ranked: the benchmark data has no computer-use score.
+
+MineBench isn't on Alexandria, so its leaderboard is scraped with Firecrawl and cached for a day like everything else. It rates a model without its effort level, so every effort level of a model shares one rating, and models it hasn't tested (OpenAI's non-Pro GPT-6 models, for example) rank last for 3D. If the page can't be scraped, the router still works and 3D messages go to the cheapest qualifying model.
 
 ```sh
 model-picker chat            # in any project folder; extra options go to Pi

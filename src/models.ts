@@ -100,7 +100,20 @@ export interface PickOptions {
  * either dumber or pricier than something on this list.
  */
 export function pick(models: Model[], options: PickOptions): MeasuredModel[] {
-  const candidates = models.filter(
+  const byCost = eligible(models, options).toSorted(
+    (a, b) => a.costPerTask - b.costPerTask || b.score - a.score,
+  );
+  const frontier: MeasuredModel[] = [];
+  for (const model of byCost) {
+    const best = frontier.at(-1);
+    if (!best || model.score >= best.score + MIN_SCORE_GAIN) frontier.push(model);
+  }
+  return frontier;
+}
+
+/** Every model with a measured cost that clears the floor and the filters. */
+export function eligible(models: Model[], options: PickOptions): MeasuredModel[] {
+  return models.filter(
     (model): model is MeasuredModel =>
       model.costPerTask !== undefined &&
       model.costPerTask > 0 &&
@@ -109,13 +122,6 @@ export function pick(models: Model[], options: PickOptions): MeasuredModel[] {
       (!options.openWeightsOnly || model.openWeights) &&
       (options.creator === undefined || model.creator === options.creator),
   );
-  const byCost = candidates.toSorted((a, b) => a.costPerTask - b.costPerTask || b.score - a.score);
-  const frontier: MeasuredModel[] = [];
-  for (const model of byCost) {
-    const best = frontier.at(-1);
-    if (!best || model.score >= best.score + MIN_SCORE_GAIN) frontier.push(model);
-  }
-  return frontier;
 }
 
 // A model costing up to this much more than the cheapest qualifying one wins if it scores higher:
@@ -134,7 +140,12 @@ export function bestValue<T>(
     .filter((candidate) => cost(candidate) <= cheapest * margin)
     .reduce<T | undefined>(
       (best, candidate) =>
-        best === undefined || score(candidate) > score(best) ? candidate : best,
+        best === undefined ||
+        score(candidate) > score(best) ||
+        // Ties include models the benchmark never measured, which all rank last.
+        (score(candidate) === score(best) && cost(candidate) < cost(best))
+          ? candidate
+          : best,
       undefined,
     );
 }

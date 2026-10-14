@@ -54,12 +54,12 @@ function apiKey(): string {
   return key;
 }
 
-async function post(calls: Call[]): Promise<z.infer<typeof responseSchema>["data"]["alexandria"]> {
+async function scrape(body: unknown): Promise<unknown> {
   for (let attempt = 0; ; attempt++) {
     const response = await fetch(`${API_URL}/v2/scrape`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${apiKey()}` },
-      body: JSON.stringify({ alexandria: calls }),
+      body: JSON.stringify(body),
     });
     if (response.status === 429 && attempt < MAX_RETRIES) {
       const waitSeconds = Number(response.headers.get("retry-after") ?? 20);
@@ -70,8 +70,24 @@ async function post(calls: Call[]): Promise<z.infer<typeof responseSchema>["data
     if (!response.ok) {
       throw new Error(`Firecrawl returned ${response.status}: ${await response.text()}`);
     }
-    return responseSchema.parse(await response.json()).data.alexandria;
+    return response.json();
   }
+}
+
+async function post(calls: Call[]): Promise<z.infer<typeof responseSchema>["data"]["alexandria"]> {
+  return responseSchema.parse(await scrape({ alexandria: calls })).data.alexandria;
+}
+
+const markdownSchema = z.object({ data: z.object({ markdown: z.string() }) });
+
+/** One web page as markdown, for leaderboards Alexandria doesn't cover; cached like Alexandria calls. */
+export async function scrapeMarkdown(url: string): Promise<string> {
+  const key = createHash("sha256").update(`markdown:${url}`).digest("hex");
+  const cached = await readCache(key);
+  if (cached) return z.string().parse(cached[0]);
+  const { markdown } = markdownSchema.parse(await scrape({ url, formats: ["markdown"] })).data;
+  await writeCache(key, [markdown]);
+  return markdown;
 }
 
 /** Runs up to 10 Alexandria calls in one request, serving them from the local cache when fresh. */

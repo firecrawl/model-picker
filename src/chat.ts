@@ -1,10 +1,10 @@
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { normalize } from "../pi/routing.ts";
 import { REGIONS } from "../pi/regions.ts";
 import { fetchModels } from "./models.ts";
 import { print, printError } from "./output.ts";
+import { PI_BIN, PI_DIR, refreshPiModels } from "./pi.ts";
+import { normalize } from "./work.ts";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -20,8 +20,6 @@ async function keysFromDotEnv(): Promise<Record<string, string>> {
   return keys;
 }
 
-// A Pi config folder of its own, so chat starts clean without changing the user's Pi setup.
-const PI_DIR = join(homedir(), ".config", "model-picker", "pi");
 
 async function prepareConfig(): Promise<void> {
   const settings = Bun.file(join(PI_DIR, "settings.json"));
@@ -124,7 +122,7 @@ const CHAT_FLAGS = ["--region", "--creators", "--open", "--value-margin", "--pi-
 
 /** Every option Pi accepts, read from its own --help so it stays right across Pi versions. */
 async function piOptions(): Promise<Set<string>> {
-  const help = await Bun.$`${join(ROOT, "node_modules", ".bin", "pi")} --help`
+  const help = await Bun.$`${PI_BIN} --help`
     .quiet()
     .nothrow()
     .text();
@@ -191,6 +189,7 @@ async function launchPi(
   dotEnv: Record<string, string>,
 ): Promise<number> {
   await prepareConfig();
+  await refreshPiModels();
   const env = {
     ...dotEnv,
     ...process.env,
@@ -199,7 +198,7 @@ async function launchPi(
   };
   const pi = Bun.spawn(
     [
-      join(ROOT, "node_modules", ".bin", "pi"),
+      PI_BIN,
       "--extension",
       join(ROOT, "pi", "router.ts"),
       "--model",

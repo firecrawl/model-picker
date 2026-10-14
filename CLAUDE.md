@@ -3,6 +3,8 @@ Bun CLI plus a Claude Code skill. All data comes from Firecrawl Alexandria (`POS
 - `src/alexandria.ts`: the one HTTP client: batching, cache, 429 retry.
 - `src/models.ts`: Artificial Analysis leaderboard and the cost/score frontier.
 - `src/providers.ts`: per-provider endpoints for one model.
+- `src/work.ts`: difficulty floors, kinds of work and their benchmarks, shared by `build` and `chat`.
+- `src/snap.ts`: SubQ Snap labels each step or message when `SUBQ_API_KEY` is set.
 - `skills/model-picker/SKILL.md`: how Claude Code should use the CLI.
 
 Alexandria allows about 15 requests a minute on small plans: batch calls into one request instead of looping.

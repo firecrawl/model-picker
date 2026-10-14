@@ -5,6 +5,7 @@ import type {
   ModelRouteRequest,
   Theme,
 } from "@earendil-works/pi-coding-agent";
+import { label, snapEnabled } from "../src/snap.ts";
 import {
   choose,
   DIFFICULTIES,
@@ -30,6 +31,7 @@ Kind of work:
 - tools: multi-step work driving tools, the terminal or a browser
 - vision: understanding images or screenshots
 - long-context: reading or reasoning over large files or documents
+- 3d: building 3D models, scenes or worlds, e.g. with Three.js, voxels or CAD code; choose this over coding when the code's purpose is 3D
 - general: anything else
 Reply with exactly two words, difficulty then kind, e.g. "medium coding".`;
 
@@ -44,6 +46,11 @@ async function classify(
   classifier: Model<Api>,
   request: ModelRouteRequest<RouterState>,
 ): Promise<RouterState> {
+  if (snapEnabled()) {
+    // Snap reads up to 384K tokens; about a million characters leaves room for the questions.
+    const snap = await label(lastUserText(request.messages).slice(-1_000_000), request.signal);
+    return { difficulty: snap.difficulty, task: snap.work, snapConfidence: snap.confidence };
+  }
   const reply = await ctx.modelRegistry.complete(
     classifier,
     {
@@ -80,9 +87,9 @@ function routingTable(candidates: Candidates): { name: string; uses: string }[] 
         name: `${route.model.name}${effort}`,
         work: new Map<string, Task[]>(),
       };
-      const label: Difficulty | `${Difficulty} (best available)` =
+      const tier: Difficulty | `${Difficulty} (best available)` =
         route.state?.bestAvailable === true ? `${difficulty} (best available)` : difficulty;
-      entry.work.set(label, [...(entry.work.get(label) ?? []), task]);
+      entry.work.set(tier, [...(entry.work.get(tier) ?? []), task]);
       uses.set(key, entry);
     }
   }
@@ -183,12 +190,12 @@ export default function modelPickerRouter(pi: ExtensionAPI): void {
       const needs = needsOf(request.messages);
       const cheapest = choose(all, "easy", "general", { image: false, tokens: 0 });
       if (request.reason !== "user") return choose(all, "easy", "general", needs);
-      // The cheapest easy-tier model is the classifier: one short call per user message.
-      const { difficulty, task } = await classify(ctx, cheapest.model, request);
+      // SubQ Snap labels the message when there's a key; otherwise the cheapest easy-tier model does.
+      const { difficulty, task, snapConfidence } = await classify(ctx, cheapest.model, request);
       const route = choose(all, difficulty, task, needs);
       ctx.ui.setStatus(
         "model-picker-route",
-        `${difficulty} · ${task}${needs.image ? " · image" : ""} → ${route.model.name} ${route.thinkingLevel}${route.state?.bestAvailable === true ? " (best available)" : ""}`,
+        `${difficulty} · ${task}${needs.image ? " · image" : ""}${snapConfidence === undefined ? "" : ` (Snap ${Math.round(snapConfidence * 100)}%)`} → ${route.model.name} ${route.thinkingLevel}${route.state?.bestAvailable === true ? " (best available)" : ""}`,
       );
       return route;
     },

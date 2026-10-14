@@ -5,29 +5,28 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { bestValue, fetchModels, type Model as BenchmarkedModel } from "../src/models.ts";
+import {
+  baseName,
+  EFFORT_SUFFIX,
+  FLOORS,
+  normalize,
+  withMineBench,
+  workScore,
+  type Difficulty,
+  type Work as Task,
+} from "../src/work.ts";
 import { REGIONS } from "./regions.ts";
 
-// Same Intelligence Index floors as `model-picker build`.
-const FLOORS = { hard: 50, medium: 42, easy: 30 } as const;
-export type Difficulty = keyof typeof FLOORS;
-export const DIFFICULTIES: readonly Difficulty[] = ["hard", "medium", "easy"];
-
-export const TASKS = ["coding", "tools", "vision", "long-context", "general"] as const;
-export type Task = (typeof TASKS)[number];
-// Benchmarks that measure each kind of work, best first. General work ranks on the Intelligence Index.
-const TASK_BENCHMARKS: Record<Task, readonly string[]> = {
-  coding: ["terminal_bench_4_0", "terminalbench_hard", "scicode"],
-  tools: ["tau2", "terminal_bench_4_0"],
-  vision: ["mmmu_pro"],
-  "long-context": ["lcr"],
-  general: [],
-};
+export { DIFFICULTIES, WORK_KINDS as TASKS } from "../src/work.ts";
+export type { Difficulty, Task };
 
 export interface RouterState {
   difficulty: Difficulty;
   task: Task;
   /** No allowed model clears the difficulty's floor, so the highest-scoring one answers. */
   bestAvailable?: boolean;
+  /** How sure SubQ Snap was of the difficulty, when it labelled the message. */
+  snapConfidence?: number;
 }
 
 export interface Candidates {
@@ -66,9 +65,9 @@ const EFFORTS: Record<string, ModelThinkingLevel> = {
   medium: "medium",
   high: "high",
   xhigh: "xhigh",
+  max: "max",
 };
-const EFFORT_SUFFIX = /-(low|medium|high|xhigh)$/;
-export const normalize = (id: string): string => id.toLowerCase().replaceAll(/[^a-z0-9]/g, "");
+const NAME_EFFORT = /\((low|medium|high|xhigh|max)\b/i;
 
 /** The settings file, with `mp chat` flags (passed as JSON in the environment) on top. */
 export async function loadSettings(): Promise<z.infer<typeof settingsSchema>> {
@@ -95,19 +94,20 @@ export async function loadCandidates(ctx: ExtensionContext): Promise<Candidates>
       .filter((model) => model.provider === "openrouter")
       .map((model): [string, Model<Api>] => [normalize(model.id.split("/").at(-1) ?? ""), model]),
   );
-  const all = (await fetchModels()).flatMap((benchmarked) => {
+  const all = (await withMineBench(await fetchModels())).flatMap((benchmarked) => {
     const { costPerTask } = benchmarked;
     if (costPerTask === undefined || costPerTask <= 0 || costPerTask > settings.maxCost) return [];
     if (settings.openWeightsOnly && !benchmarked.openWeights) return [];
     // Names compare without case, spaces or punctuation, so "Zai" matches "Z AI".
     if (allowed.size > 0 && !allowed.has(normalize(benchmarked.creator))) return [];
     if (regional && !regional.has(normalize(benchmarked.creator))) return [];
-    const model = openRouter.get(normalize(benchmarked.slug.replace(EFFORT_SUFFIX, "")));
+    const model = openRouter.get(baseName(benchmarked.slug));
     if (!model) return [];
-    // Artificial Analysis labels a model's top effort "Max" and gives it no slug suffix.
-    const effort = EFFORT_SUFFIX.exec(benchmarked.slug)?.[1];
-    const thinkingLevel =
-      effort === undefined ? (/\(Max\b/.test(benchmarked.name) ? "max" : "off") : EFFORTS[effort];
+    // Some slugs carry no effort suffix and only the name has it, e.g. "Gemini 4 Argon (High)" or "(Max)".
+    const effort = (
+      EFFORT_SUFFIX.exec(benchmarked.slug)?.[1] ?? NAME_EFFORT.exec(benchmarked.name)?.[1]
+    )?.toLowerCase();
+    const thinkingLevel = effort === undefined ? "off" : EFFORTS[effort];
     return [
       {
         benchmarked: { ...benchmarked, costPerTask },
@@ -117,17 +117,6 @@ export async function loadCandidates(ctx: ExtensionContext): Promise<Candidates>
     ];
   });
   return { all, valueMargin: settings.valueMargin };
-}
-
-/** How well a candidate does the kind of work; a model without that benchmark ranks last. */
-function taskScore(candidate: Candidate, task: Task): number {
-  const benchmarks = TASK_BENCHMARKS[task];
-  if (benchmarks.length === 0) return candidate.benchmarked.score;
-  for (const name of benchmarks) {
-    const score = candidate.benchmarked.benchmarks[name];
-    if (score !== null && score !== undefined) return score;
-  }
-  return -1;
 }
 
 /**
@@ -158,7 +147,7 @@ export function choose(
   }
   const choice = bestValue(
     eligible,
-    (candidate) => taskScore(candidate, task),
+    (candidate) => workScore(candidate.benchmarked, task),
     (candidate) => candidate.benchmarked.costPerTask,
     valueMargin,
   );

@@ -1,22 +1,17 @@
 import { z } from "zod";
+import { jsonEvents, parseJson, type AgentRun, type Harness, type Usage } from "./harness.ts";
+import { modelMap, runnableId, type Runnable } from "./openrouter.ts";
 
-export interface Usage {
-  costUsd: number;
-  inputTokens: number;
-  outputTokens: number;
-  reasoningTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-}
+// A cold OpenCode background service answers `models` with exit 0 and no output; later calls work.
+const LIST_ATTEMPTS = 3;
 
-export interface OpenCodeRun {
-  exitCode: number;
-  seconds: number;
-  reply: string;
-  /** Undefined when OpenCode's session export failed; the OpenRouter activity page still has it. */
-  usage: Usage | undefined;
-  /** Kept so a failed export can be retried by hand: `opencode session export <id>`. */
-  sessionId: string | undefined;
+async function openCodeModels(): Promise<Map<string, string>> {
+  for (let attempt = 1; ; attempt++) {
+    const output = await Bun.$`opencode models`.quiet().nothrow().text();
+    if (output.trim() !== "" || attempt === LIST_ATTEMPTS)
+      return modelMap(output.split("\n").map((line) => line.trim()));
+    await Bun.sleep(1000);
+  }
 }
 
 const eventSchema = z.object({
@@ -42,23 +37,11 @@ const STEP_TIMEOUT_MS = 30 * 60 * 1000;
 // Exports of long sessions run to megabytes; give them room before treating usage as unknown.
 const EXPORT_TIMEOUT_MS = 3 * 60 * 1000;
 
-// OpenCode's output can end mid-line (a killed run, a truncated export); skip what doesn't parse.
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
 
 function parseEvents(jsonLines: string): { sessionId: string | undefined; reply: string } {
   let sessionId: string | undefined;
   let reply = "";
-  for (const line of jsonLines.split("\n")) {
-    if (!line.startsWith("{")) continue;
-    const parsed = eventSchema.safeParse(parseJson(line));
-    if (!parsed.success) continue;
-    const event = parsed.data;
+  for (const event of jsonEvents(jsonLines, eventSchema)) {
     sessionId ??= event.sessionID;
     if (event.type === "text" && event.part?.text !== undefined) reply = event.part.text;
     if (event.type === "error" && event.error) reply = `Error: ${event.error.message}`;
@@ -104,15 +87,15 @@ async function sessionUsage(dir: string, sessionId: string): Promise<Usage | und
   return undefined;
 }
 
-/** One non-interactive OpenCode session in `dir`, with its cost and tokens from the session export. */
-export async function runOpenCode(
-  dir: string,
-  opencodeId: string,
-  prompt: string,
-): Promise<OpenCodeRun> {
+/**
+ * One non-interactive OpenCode session in `dir`, with its cost and tokens from the session export.
+ * A failed export leaves usage unknown; the session id lets it be retried by hand with
+ * `opencode session export <id>`.
+ */
+async function runOpenCode(dir: string, runnable: Runnable, prompt: string): Promise<AgentRun> {
   const started = performance.now();
   const opencode = Bun.spawn(
-    ["opencode", "run", "--standalone", "--auto", "--format", "json", "-m", opencodeId, prompt],
+    ["opencode", "run", "--standalone", "--auto", "--format", "json", "-m", runnableId(runnable), prompt],
     { ...inDir(dir), stdout: "pipe", stderr: "ignore", timeout: STEP_TIMEOUT_MS },
   );
   const output = await new Response(opencode.stdout).text();
@@ -122,3 +105,11 @@ export async function runOpenCode(
   const usage = sessionId === undefined ? undefined : await sessionUsage(dir, sessionId);
   return { exitCode, seconds, reply, usage, sessionId };
 }
+
+export const openCodeHarness: Harness = {
+  name: "opencode",
+  label: "OpenCode",
+  models: openCodeModels,
+  run: runOpenCode,
+  missing: "OpenCode isn't installed or lists no OpenRouter models. Install it from opencode.ai.",
+};

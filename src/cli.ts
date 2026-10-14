@@ -4,8 +4,12 @@ import { fetchModels, pick, type Model, type PickOptions } from "./models.ts";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { build } from "./build.ts";
+import { snapEnabled } from "./snap.ts";
+import { FLOORS, withMineBench } from "./work.ts";
 import { runChat } from "./chat.ts";
-import { openRouterModels } from "./openrouter.ts";
+import { HARNESS_NAMES, type Harness } from "./harness.ts";
+import { openCodeHarness } from "./opencode.ts";
+import { piHarness } from "./pi.ts";
 import { print, printError } from "./output.ts";
 import { fetchProviders, type ProviderSort } from "./providers.ts";
 import { stepLine, summaryLine, writeReport } from "./report.ts";
@@ -33,11 +37,12 @@ Data: Artificial Analysis benchmarks via Firecrawl Alexandria. Needs FIRECRAWL_A
       models for this session, on top of ~/.config/model-picker/router.json; anything else
       goes to Pi.
 
-  model-picker build "<task>" [--dir ./out] [--report <dir>] [--open]
-      Build something with the cheapest model for each step, through OpenCode + OpenRouter
-      (needs OPENROUTER_API_KEY): a capable model writes plan.json, then each step goes to
-      the cheapest model good enough for its difficulty. Writes REPORT.md and report.json
-      with every step's model, time, tokens and cost.
+  model-picker build "<task>" [--dir ./out] [--report <dir>] [--harness pi|opencode] [--planner-min-score 50] [--open]
+      Build something with the cheapest model for each step, through OpenRouter (needs
+      OPENROUTER_API_KEY): a capable model writes plan.json, then each step runs as its own
+      Pi session (or OpenCode with --harness opencode) on the cheapest model good enough for
+      it. Writes REPORT.md and report.json with every step's model, time, tokens and cost.
+      --planner-min-score  Intelligence Index floor for the planner (default 50, the hard floor).
 
 Examples:
   model-picker pick --min-score 45                       cheapest models scoring 45+
@@ -53,7 +58,9 @@ Examples:
   model-picker chat --region china                       Chinese models only
   model-picker chat --creators Anthropic,OpenAI          only these makers' models
   model-picker build "Build a Flappy Bird game" --dir ./flappy
-                                                         build it, then read ./flappy/REPORT.md`;
+                                                         build it, then read ./flappy/REPORT.md
+  model-picker build "Build a Flappy Bird game" --planner-min-score 42
+                                                         plan with a cheaper model`;
 
 const money = (usd: number): string => (usd < 0.1 ? `$${usd.toFixed(3)}` : `$${usd.toFixed(2)}`);
 const taskCost = (usd: number | undefined): string =>
@@ -203,15 +210,23 @@ async function runBuild(task: string | undefined, values: Values): Promise<void>
   const dir = resolve(typeof values.dir === "string" ? values.dir : ".");
   const reportDir = resolve(typeof values.report === "string" ? values.report : dir);
   await mkdir(dir, { recursive: true });
-  const [models, openRouter] = await Promise.all([fetchModels(), openRouterModels()]);
-  if (openRouter.size === 0) {
-    throw new Error(
-      "OpenCode isn't installed or lists no OpenRouter models. Install it from opencode.ai.",
-    );
-  }
-  print(`Building in ${dir}\n`);
+  const harnessName = values.harness ?? "pi";
+  const harnesses: Record<string, Harness> = { pi: piHarness, opencode: openCodeHarness };
+  const harness = typeof harnessName === "string" ? harnesses[harnessName] : undefined;
+  if (!harness) throw new Error(`--harness must be one of: ${HARNESS_NAMES.join(", ")}.`);
+  const [models, available] = await Promise.all([
+    fetchModels().then(withMineBench),
+    harness.models(),
+  ]);
+  if (available.size === 0) throw new Error(harness.missing);
+  print(
+    `Building in ${dir} with ${harness.label}\n${snapEnabled() ? "Steps labelled by SubQ Snap" : "Steps labelled by the planner (set SUBQ_API_KEY to use SubQ Snap)"}\n`,
+  );
   const { minScore: _ignored, ...baseOptions } = pickOptions(values);
-  const result = await build(task, dir, models, openRouter, baseOptions, (step) =>
+  const plannerMinScore = Number(values["planner-min-score"] ?? FLOORS.hard);
+  if (!(plannerMinScore >= 0 && plannerMinScore <= 100))
+    throw new Error("--planner-min-score needs a number from 0 to 100, e.g. 42.");
+  const result = await build(task, dir, models, harness, available, baseOptions, plannerMinScore, (step) =>
     print(stepLine(step)),
   );
   await writeReport(reportDir, task, result);
@@ -233,6 +248,8 @@ const { values, positionals } = parseArgs({
     "claude-code": { type: "boolean" },
     dir: { type: "string" },
     report: { type: "string" },
+    "planner-min-score": { type: "string" },
+    harness: { type: "string" },
     help: { type: "boolean", short: "h" },
   },
 });
