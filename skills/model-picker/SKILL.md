@@ -5,7 +5,7 @@ description: Find the cheapest AI model that is smart enough for a task, and the
 
 # Model picker
 
-The CLI is `model-picker`. If it isn't on PATH, ask the user to install it with `curl -fsSL https://raw.githubusercontent.com/firecrawl/model-picker/main/install.sh | sh`, or run `bun src/cli.ts` from two directories above this skill's base directory instead (after `bun install` there). It needs `FIRECRAWL_API_KEY` (free at https://firecrawl.dev), from the environment or `~/.config/model-picker/.env`. Results are cached for 24 hours, so repeat runs cost nothing.
+The CLI is `model-picker`. If it isn't on PATH, ask the user to install it with `curl -fsSL https://raw.githubusercontent.com/firecrawl/model-picker/main/install.sh | sh`, or run `bun src/cli.ts` from two directories above this skill's base directory instead (after `bun install` there). It needs `FIRECRAWL_API_KEY` (free at https://firecrawl.dev), from the environment or `~/.config/model-picker/.env`; if a command says a key is missing, ask the user to run `mp setup` in their own terminal (it prompts for keys, so don't run it yourself). Results are cached for 24 hours, so repeat runs cost nothing.
 
 ## 1. Turn the task into a score floor
 

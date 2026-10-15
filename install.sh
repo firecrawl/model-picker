@@ -13,6 +13,9 @@ main() {
   version=${MODEL_PICKER_VERSION:-latest}
   install_dir=${MODEL_PICKER_DIR:-$HOME/.local/share/model-picker}
   bin_dir=${MODEL_PICKER_BIN_DIR:-$HOME/.local/bin}
+  # With a trailing slash the backup, "$install_dir.old", would land inside the install itself.
+  install_dir=$(trim_slashes "$install_dir")
+  bin_dir=$(trim_slashes "$bin_dir")
   config_dir=$HOME/.config/model-picker
 
   case $(uname -s) in
@@ -105,11 +108,29 @@ EOF
       echo
       ;;
   esac
-  echo "Next: add your keys to $config_dir/.env, then try:"
+  # Piped into sh, stdin is this script, so the questions are read from the terminal itself.
+  if [ -t 1 ] && (: </dev/tty) 2>/dev/null; then
+    printf 'Set up your API keys now? [Y/n] '
+    read -r answer </dev/tty || answer=n
+    case $answer in
+      [nN]*) ;;
+      *)
+        echo
+        "$install_dir/bin/model-picker" setup </dev/tty || true
+        return
+        ;;
+    esac
+  fi
+  echo "Next: run \`mp setup\` to add your API keys (or edit $config_dir/.env), then try:"
   echo "  mp pick --min-score 45"
   echo "  mp chat"
 }
 
+trim_slashes() {
+  path=$1
+  while [ "$path" != / ] && [ "${path%/}" != "$path" ]; do path=${path%/}; done
+  printf '%s' "$path"
+}
 say() { printf '\033[1m==>\033[0m %s\n' "$1"; }
 fail() {
   printf '\033[31merror:\033[0m %s\n' "$1" >&2

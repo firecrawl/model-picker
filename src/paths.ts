@@ -13,6 +13,7 @@ const ROOT = compiled
   : join(import.meta.dir, "..");
 
 export const CONFIG_DIR = join(homedir(), ".config", "model-picker");
+export const DOT_ENV = join(CONFIG_DIR, ".env");
 export const PI_BIN =
   process.env.MODEL_PICKER_PI ??
   (compiled ? join(ROOT, "pi", "pi") : join(ROOT, "node_modules", ".bin", "pi"));
@@ -23,7 +24,7 @@ export const ROUTER = compiled ? join(ROOT, "router.js") : join(ROOT, "pi", "rou
  * model-picker runs outside its folder: Bun only loads the cwd's. The real environment wins.
  */
 export async function loadDotEnv(): Promise<void> {
-  const files = [join(CONFIG_DIR, ".env"), ...(compiled ? [] : [join(ROOT, ".env")])];
+  const files = [DOT_ENV, ...(compiled ? [] : [join(ROOT, ".env")])];
   for (const path of files) {
     const file = Bun.file(path);
     if (!(await file.exists())) continue;

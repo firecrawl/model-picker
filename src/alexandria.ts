@@ -48,7 +48,7 @@ function apiKey(): string {
   const key = process.env.FIRECRAWL_API_KEY;
   if (key === undefined || key === "") {
     throw new Error(
-      "FIRECRAWL_API_KEY is not set. Get a free key at https://firecrawl.dev and export it.",
+      "FIRECRAWL_API_KEY is not set. Run `mp setup` to add it (free at https://firecrawl.dev).",
     );
   }
   return key;
