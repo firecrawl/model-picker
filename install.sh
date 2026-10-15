@@ -60,12 +60,24 @@ main() {
   [ "$expected" = "$actual" ] || fail "Checksum mismatch for $asset: expected $expected, got $actual. Nothing was installed."
   say "Checksum OK"
 
-  tar xzf "$tmp/$asset" -C "$tmp"
-  mkdir -p "$(dirname "$install_dir")" "$bin_dir"
-  # Swap the whole folder so an update never leaves half of an old Pi behind.
+  parent=$(dirname "$install_dir")
+  mkdir -p "$parent" "$bin_dir"
+  # Unpack beside the install so swapping it in is a rename, not a copy that can fail halfway.
+  stage=$(mktemp -d "$parent/.model-picker-new.XXXXXX")
+  trap 'rm -rf "$tmp" "$stage"' EXIT INT TERM
+  tar xzf "$tmp/$asset" -C "$stage"
+  new=$stage/model-picker-$os-$arch
+  # Try both binaries before touching the current install, which stays as it was if either fails.
+  if ! installed=$("$new/bin/model-picker" --version 2>/dev/null) || ! "$new/pi/pi" --version >/dev/null 2>&1; then
+    fail "The downloaded build doesn't run on this machine, so nothing was changed."
+  fi
+
   rm -rf "$install_dir.old"
   if [ -e "$install_dir" ]; then mv "$install_dir" "$install_dir.old"; fi
-  mv "$tmp/model-picker-$os-$arch" "$install_dir"
+  if ! mv "$new" "$install_dir"; then
+    if [ -e "$install_dir.old" ]; then mv "$install_dir.old" "$install_dir"; fi
+    fail "Couldn't move the new version into $install_dir; the previous one is still installed."
+  fi
   rm -rf "$install_dir.old"
   ln -sf "$install_dir/bin/model-picker" "$bin_dir/model-picker"
   ln -sf "$install_dir/bin/model-picker" "$bin_dir/mp"
@@ -83,7 +95,6 @@ EOF
     )
   fi
 
-  installed=$("$install_dir/bin/model-picker" --version) || fail "Installed, but $install_dir/bin/model-picker didn't run."
   say "Installed model-picker $installed to $install_dir"
   echo
   case ":$PATH:" in

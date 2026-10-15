@@ -1,3 +1,4 @@
+import { parse } from "dotenv";
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -26,9 +27,8 @@ export async function loadDotEnv(): Promise<void> {
   for (const path of files) {
     const file = Bun.file(path);
     if (!(await file.exists())) continue;
-    for (const line of (await file.text()).split("\n")) {
-      const match = /^\s*([A-Z_][A-Z0-9_]*)\s*=\s*"?([^"\n]*)"?\s*$/.exec(line);
-      if (match?.[1] !== undefined && (match[2] ?? "") !== "") process.env[match[1]] ??= match[2];
+    for (const [key, value] of Object.entries(parse(await file.text()))) {
+      if (value !== "") process.env[key] ??= value;
     }
   }
 }
