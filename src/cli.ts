@@ -10,6 +10,7 @@ import { runChat } from "./chat.ts";
 import { HARNESS_NAMES, type Harness } from "./harness.ts";
 import { openCodeHarness } from "./opencode.ts";
 import { loadDotEnv } from "./paths.ts";
+import { requireKey, runSetup } from "./setup.ts";
 import { piHarness } from "./pi.ts";
 import { print, printError } from "./output.ts";
 import { fetchProviders, type ProviderSort } from "./providers.ts";
@@ -18,7 +19,10 @@ import { version } from "../package.json";
 
 const USAGE = `model-picker (or mp): find the cheapest AI model that's smart enough for the job.
 Data: Artificial Analysis benchmarks via Firecrawl Alexandria. Needs FIRECRAWL_API_KEY.
-Keys can live in ~/.config/model-picker/.env instead of your shell.
+Keys can live in ~/.config/model-picker/.env instead of your shell: \`model-picker setup\` saves them.
+
+  model-picker setup
+      Asks for your Firecrawl, OpenRouter and SubQ keys, checks them, and saves them.
 
   model-picker pick [--min-score 40] [--max-cost 5] [--open] [--claude-code] [--vs <slug>] [--json]
       Models nothing else beats on both score and cost, cheapest first.
@@ -210,6 +214,7 @@ async function runSearch(
 async function runBuild(task: string | undefined, values: Values): Promise<void> {
   if (task === undefined || task === "")
     throw new Error('Usage: model-picker build "<task>" --dir <folder>');
+  requireKey("OPENROUTER_API_KEY");
   const dir = resolve(typeof values.dir === "string" ? values.dir : ".");
   const reportDir = resolve(typeof values.report === "string" ? values.report : dir);
   await mkdir(dir, { recursive: true });
@@ -277,6 +282,7 @@ try {
   else if (command === "providers") await runProviders(argument, values);
   else if (command === "search") await runSearch(argument, values);
   else if (command === "build") await runBuild(argument, values);
+  else if (command === "setup") await runSetup();
   else print(USAGE);
 } catch (error) {
   printError(error instanceof Error ? error.message : String(error));

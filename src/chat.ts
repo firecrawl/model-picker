@@ -5,6 +5,7 @@ import { fetchModels } from "./models.ts";
 import { print, printError } from "./output.ts";
 import { PI_BIN, ROUTER } from "./paths.ts";
 import { PI_DIR, refreshPiModels } from "./pi.ts";
+import { requireKey } from "./setup.ts";
 import { normalize } from "./work.ts";
 
 async function prepareConfig(): Promise<void> {
@@ -148,6 +149,8 @@ export async function runChat(args: string[]): Promise<number> {
     return 0;
   }
   try {
+    requireKey("FIRECRAWL_API_KEY");
+    requireKey("OPENROUTER_API_KEY");
     const { overrides, piArgs } = splitArgs(
       args.map((arg) => (arg === "--pi-help" ? "--help" : arg)),
     );

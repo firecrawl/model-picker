@@ -105,7 +105,20 @@ EOF
       echo
       ;;
   esac
-  echo "Next: add your keys to $config_dir/.env, then try:"
+  # Piped into sh, stdin is this script, so the questions are read from the terminal itself.
+  if [ -t 1 ] && (: </dev/tty) 2>/dev/null; then
+    printf 'Set up your API keys now? [Y/n] '
+    read -r answer </dev/tty || answer=n
+    case $answer in
+      [nN]*) ;;
+      *)
+        echo
+        "$install_dir/bin/model-picker" setup </dev/tty || true
+        return
+        ;;
+    esac
+  fi
+  echo "Next: run \`mp setup\` to add your API keys (or edit $config_dir/.env), then try:"
   echo "  mp pick --min-score 45"
   echo "  mp chat"
 }

@@ -147,6 +147,7 @@ async function runWith(extraEnv: Record<string, string>, ...args: string[]): Pro
       ...Bun.env,
       PATH: `${fakeBin}:${Bun.env.PATH ?? ""}`,
       FIRECRAWL_API_KEY: "test",
+      OPENROUTER_API_KEY: "test",
       FIRECRAWL_API_URL: server.url.origin,
       MODEL_PICKER_CACHE: cacheDir,
       SUBQ_API_KEY: "",
@@ -213,13 +214,23 @@ test("--planner-min-score picks a cheaper planner without changing the steps", a
 
 test("build runs each step as a Pi session by default", async () => {
   const dir = await mkdtemp(join(tmpdir(), "model-picker-pi-"));
-  const output = await runWith({ MODEL_PICKER_PI: fakePi, HOME: cacheDir }, "build", "make a game", "--dir", dir);
+  const output = await runWith(
+    { MODEL_PICKER_PI: fakePi, HOME: cacheDir },
+    "build",
+    "make a game",
+    "--dir",
+    dir,
+  );
   expect(output).toContain("with Pi");
   expect(output).toContain("[plan] Plan the build: mid");
   expect(output).toContain("[medium · general] Styles: cheap-open");
   expect(output).toContain("$0.030 across 3 Pi sessions");
   const models = (await Bun.file(join(dir, "models.txt")).text()).trim().split("\n");
-  expect(models.toSorted()).toEqual(["openrouter/test/cheap-open", "openrouter/test/mid", "openrouter/test/mid"]);
+  expect(models.toSorted()).toEqual([
+    "openrouter/test/cheap-open",
+    "openrouter/test/mid",
+    "openrouter/test/mid",
+  ]);
   const report = await Bun.file(join(dir, "REPORT.md")).text();
   expect(report).toContain("Harness: Pi");
   expect(report).toContain("each Pi session's usage");

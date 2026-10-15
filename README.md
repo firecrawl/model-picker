@@ -24,7 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/firecrawl/model-picker/main/install
 
 This downloads the build for your machine from the [latest release](https://github.com/firecrawl/model-picker/releases/latest), checks it against the release's `SHA256SUMS`, and puts `model-picker` (and its short name `mp`) in `~/.local/bin`. It needs nothing else: no Bun, no Node, and [Pi](https://pi.dev) comes with it. Run the same line again to update, or end it with `| MODEL_PICKER_VERSION=v0.1.0 sh` to install a particular release.
 
-Then add your keys to `~/.config/model-picker/.env` (the installer creates it) or export them in your shell:
+At the end it offers to run `mp setup`, which asks for your API keys, checks them with Firecrawl and OpenRouter, and saves them to `~/.config/model-picker/.env` (readable only by you). Run `mp setup` again any time to change a key. You can also edit that file or export the keys in your shell, which wins over the file:
 
 | Key | For |
 |---|---|
