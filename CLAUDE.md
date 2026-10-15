@@ -6,6 +6,7 @@ Bun CLI plus a Claude Code skill. All data comes from Firecrawl Alexandria (`POS
 - `src/work.ts`: difficulty floors, kinds of work and their benchmarks, shared by `build` and `chat`.
 - `src/snap.ts`: SubQ Snap labels each step or message when `SUBQ_API_KEY` is set.
 - `skills/model-picker/SKILL.md`: how Claude Code should use the CLI.
+- `src/paths.ts`: where Pi and the router live. A release (`scripts/package.sh`, `install.sh`) is a compiled binary with Pi's own release binary and `pi/router.ts` bundled to `router.js` beside it, so nothing under `pi/` may import Bun-only APIs or `src/paths.ts`.
 
 Alexandria allows about 15 requests a minute on small plans: batch calls into one request instead of looping.
 

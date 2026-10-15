@@ -21,9 +21,10 @@
     "test": "bun test"
   },
   "dependencies": {
-    "zod": "4.6.7",
     "@earendil-works/pi-ai": "1.2.0",
-    "@earendil-works/pi-coding-agent": "1.2.0"
+    "@earendil-works/pi-coding-agent": "1.2.0",
+    "dotenv": "18.0.8",
+    "zod": "4.6.7"
   },
   "repository": {
     "type": "git",
