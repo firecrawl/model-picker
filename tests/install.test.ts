@@ -61,9 +61,18 @@ async function release(version: string, runs: boolean): Promise<string> {
   return dir;
 }
 
-async function install(home: string, releaseDir: string): Promise<number> {
+async function install(
+  home: string,
+  releaseDir: string,
+  extraEnv: Record<string, string> = {},
+): Promise<number> {
   const run = Bun.spawn(["sh", join(ROOT, "install.sh")], {
-    env: { HOME: home, PATH: Bun.env.PATH, MODEL_PICKER_BASE_URL: `file://${releaseDir}` },
+    env: {
+      HOME: home,
+      PATH: Bun.env.PATH,
+      MODEL_PICKER_BASE_URL: `file://${releaseDir}`,
+      ...extraEnv,
+    },
     stdout: "ignore",
     stderr: "ignore",
   });
@@ -86,5 +95,17 @@ test.if(["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"].includes(plat
 
     expect(await install(home, await release("3.0.0", true))).toBe(0);
     expect(await installedVersion(home)).toBe("3.0.0");
+  },
+);
+
+test.if(["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"].includes(platform))(
+  "reinstalling works when MODEL_PICKER_DIR ends in a slash",
+  async () => {
+    const home = await mkdtemp(join(tmpdir(), "mp-home-"));
+    const dir = { MODEL_PICKER_DIR: join(home, "tools", "model-picker") + "/" };
+    expect(await install(home, await release("1.0.0", true), dir)).toBe(0);
+    expect(await install(home, await release("2.0.0", true), dir)).toBe(0);
+    expect(await installedVersion(home)).toBe("2.0.0");
+    expect(await readdir(join(home, "tools"))).toEqual(["model-picker"]);
   },
 );

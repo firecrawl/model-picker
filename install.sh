@@ -13,6 +13,9 @@ main() {
   version=${MODEL_PICKER_VERSION:-latest}
   install_dir=${MODEL_PICKER_DIR:-$HOME/.local/share/model-picker}
   bin_dir=${MODEL_PICKER_BIN_DIR:-$HOME/.local/bin}
+  # With a trailing slash the backup, "$install_dir.old", would land inside the install itself.
+  install_dir=$(trim_slashes "$install_dir")
+  bin_dir=$(trim_slashes "$bin_dir")
   config_dir=$HOME/.config/model-picker
 
   case $(uname -s) in
@@ -123,6 +126,11 @@ EOF
   echo "  mp chat"
 }
 
+trim_slashes() {
+  path=$1
+  while [ "$path" != / ] && [ "${path%/}" != "$path" ]; do path=${path%/}; done
+  printf '%s' "$path"
+}
 say() { printf '\033[1m==>\033[0m %s\n' "$1"; }
 fail() {
   printf '\033[31merror:\033[0m %s\n' "$1" >&2
