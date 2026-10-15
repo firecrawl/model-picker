@@ -9,13 +9,16 @@ import { FLOORS, withMineBench } from "./work.ts";
 import { runChat } from "./chat.ts";
 import { HARNESS_NAMES, type Harness } from "./harness.ts";
 import { openCodeHarness } from "./opencode.ts";
+import { loadDotEnv } from "./paths.ts";
 import { piHarness } from "./pi.ts";
 import { print, printError } from "./output.ts";
 import { fetchProviders, type ProviderSort } from "./providers.ts";
 import { stepLine, summaryLine, writeReport } from "./report.ts";
+import { version } from "../package.json";
 
 const USAGE = `model-picker (or mp): find the cheapest AI model that's smart enough for the job.
 Data: Artificial Analysis benchmarks via Firecrawl Alexandria. Needs FIRECRAWL_API_KEY.
+Keys can live in ~/.config/model-picker/.env instead of your shell.
 
   model-picker pick [--min-score 40] [--max-cost 5] [--open] [--claude-code] [--vs <slug>] [--json]
       Models nothing else beats on both score and cost, cheapest first.
@@ -226,11 +229,24 @@ async function runBuild(task: string | undefined, values: Values): Promise<void>
   const plannerMinScore = Number(values["planner-min-score"] ?? FLOORS.hard);
   if (!(plannerMinScore >= 0 && plannerMinScore <= 100))
     throw new Error("--planner-min-score needs a number from 0 to 100, e.g. 42.");
-  const result = await build(task, dir, models, harness, available, baseOptions, plannerMinScore, (step) =>
-    print(stepLine(step)),
+  const result = await build(
+    task,
+    dir,
+    models,
+    harness,
+    available,
+    baseOptions,
+    plannerMinScore,
+    (step) => print(stepLine(step)),
   );
   await writeReport(reportDir, task, result);
   print(`\n${summaryLine(result)}\nReport: ${reportDir}/REPORT.md`);
+}
+
+await loadDotEnv();
+if (process.argv[2] === "--version" || process.argv[2] === "-v") {
+  print(version);
+  process.exit(0);
 }
 
 // `chat` hands every remaining argument to Pi, so it skips this CLI's own option parsing.

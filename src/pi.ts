@@ -1,14 +1,12 @@
 import { stat } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { jsonEvents, type AgentRun, type Harness, type Usage } from "./harness.ts";
 import { modelMap, type Runnable } from "./openrouter.ts";
+import { compiled, CONFIG_DIR, PI_BIN } from "./paths.ts";
 
-const ROOT = join(import.meta.dir, "..");
-export const PI_BIN = process.env.MODEL_PICKER_PI ?? join(ROOT, "node_modules", ".bin", "pi");
 // A Pi config folder of its own, so model-picker starts clean without changing the user's Pi setup.
-export const PI_DIR = join(homedir(), ".config", "model-picker", "pi");
+export const PI_DIR = join(CONFIG_DIR, "pi");
 const piEnv = (): Record<string, string | undefined> => ({
   ...process.env,
   PI_CODING_AGENT_DIR: PI_DIR,
@@ -35,7 +33,11 @@ export async function refreshPiModels(): Promise<void> {
 
 async function piModels(): Promise<Map<string, string>> {
   await refreshPiModels();
-  const output = await Bun.$`${PI_BIN} --list-models openrouter`.env(piEnv()).quiet().nothrow().text();
+  const output = await Bun.$`${PI_BIN} --list-models openrouter`
+    .env(piEnv())
+    .quiet()
+    .nothrow()
+    .text();
   // Rows read `openrouter  openai/gpt-6.1-sol  1.1M ...`; Pi takes the model as `provider/id`.
   const ids = output.split("\n").flatMap((line) => {
     const [provider, id] = line.trim().split(/\s+/);
@@ -67,7 +69,6 @@ const eventSchema = z.object({
     .optional(),
 });
 
-
 /** Pi's JSON mode prints one event per line; usage arrives on every finished assistant message. */
 function parseEvents(jsonLines: string): Omit<AgentRun, "exitCode" | "seconds"> {
   let sessionId: string | undefined;
@@ -77,9 +78,12 @@ function parseEvents(jsonLines: string): Omit<AgentRun, "exitCode" | "seconds"> 
     if (event.type === "session") sessionId ??= event.id;
     const message = event.message;
     if (event.type !== "message_end" || message?.role !== "assistant") continue;
-    const text = message.content?.flatMap((block) => (block.type === "text" ? [block.text ?? ""] : []));
+    const text = message.content?.flatMap((block) =>
+      block.type === "text" ? [block.text ?? ""] : [],
+    );
     if (text && text.length > 0) reply = text.join("\n");
-    if (message.stopReason === "error" && message.errorMessage !== undefined) reply = `Error: ${message.errorMessage}`;
+    if (message.stopReason === "error" && message.errorMessage !== undefined)
+      reply = `Error: ${message.errorMessage}`;
     if (message.usage) {
       const { input, output, cacheRead, cacheWrite, reasoning, cost } = message.usage;
       usage = {
@@ -126,5 +130,7 @@ export const piHarness: Harness = {
   label: "Pi",
   models: piModels,
   run: runPi,
-  missing: "Pi lists no OpenRouter models. Run `bun install` in the model-picker folder.",
+  missing: compiled
+    ? "Pi lists no OpenRouter models. Reinstall model-picker to restore the Pi that ships with it."
+    : "Pi lists no OpenRouter models. Run `bun install` in the model-picker folder.",
 };

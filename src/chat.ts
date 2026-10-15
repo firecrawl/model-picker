@@ -3,23 +3,9 @@ import { z } from "zod";
 import { REGIONS } from "../pi/regions.ts";
 import { fetchModels } from "./models.ts";
 import { print, printError } from "./output.ts";
-import { PI_BIN, PI_DIR, refreshPiModels } from "./pi.ts";
+import { PI_BIN, ROUTER } from "./paths.ts";
+import { PI_DIR, refreshPiModels } from "./pi.ts";
 import { normalize } from "./work.ts";
-
-const ROOT = join(import.meta.dir, "..");
-
-/** Keys from model-picker's own .env, for when `chat` runs outside its folder (Bun only loads the cwd's). */
-async function keysFromDotEnv(): Promise<Record<string, string>> {
-  const file = Bun.file(join(ROOT, ".env"));
-  if (!(await file.exists())) return {};
-  const keys: Record<string, string> = {};
-  for (const line of (await file.text()).split("\n")) {
-    const match = /^\s*([A-Z_][A-Z0-9_]*)\s*=\s*"?([^"\n]*)"?\s*$/.exec(line);
-    if (match?.[1] !== undefined && match[2] !== undefined) keys[match[1]] = match[2];
-  }
-  return keys;
-}
-
 
 async function prepareConfig(): Promise<void> {
   const settings = Bun.file(join(PI_DIR, "settings.json"));
@@ -122,10 +108,7 @@ const CHAT_FLAGS = ["--region", "--creators", "--open", "--value-margin", "--pi-
 
 /** Every option Pi accepts, read from its own --help so it stays right across Pi versions. */
 async function piOptions(): Promise<Set<string>> {
-  const help = await Bun.$`${PI_BIN} --help`
-    .quiet()
-    .nothrow()
-    .text();
+  const help = await Bun.$`${PI_BIN} --help`.quiet().nothrow().text();
   const options = new Set<string>();
   for (const line of help.split("\n")) {
     if (!/^\s+-/.test(line)) continue;
@@ -164,8 +147,6 @@ export async function runChat(args: string[]): Promise<number> {
     print(CHAT_HELP);
     return 0;
   }
-  const dotEnv = await keysFromDotEnv();
-  process.env.FIRECRAWL_API_KEY ??= dotEnv.FIRECRAWL_API_KEY;
   try {
     const { overrides, piArgs } = splitArgs(
       args.map((arg) => (arg === "--pi-help" ? "--help" : arg)),
@@ -176,22 +157,17 @@ export async function runChat(args: string[]): Promise<number> {
       ...(creators ? await unknownCreators(creators) : []),
     ];
     if (problems.length > 0) throw new Error(problems.join("\n"));
-    return await launchPi(overrides, piArgs, dotEnv);
+    return await launchPi(overrides, piArgs);
   } catch (error) {
     printError(error instanceof Error ? error.message : String(error));
     return 1;
   }
 }
 
-async function launchPi(
-  overrides: Record<string, unknown>,
-  piArgs: string[],
-  dotEnv: Record<string, string>,
-): Promise<number> {
+async function launchPi(overrides: Record<string, unknown>, piArgs: string[]): Promise<number> {
   await prepareConfig();
   await refreshPiModels();
   const env = {
-    ...dotEnv,
     ...process.env,
     PI_CODING_AGENT_DIR: PI_DIR,
     MODEL_PICKER_ROUTER_OVERRIDES: JSON.stringify(overrides),
@@ -200,7 +176,7 @@ async function launchPi(
     [
       PI_BIN,
       "--extension",
-      join(ROOT, "pi", "router.ts"),
+      ROUTER,
       "--model",
       "model-picker/auto",
       // Only the router: no global skills, prompt templates or other extensions.

@@ -16,39 +16,30 @@ Every row is a model nothing else beats on both score and cost. If a model isn't
 
 ## Install
 
-model-picker is a command-line tool (`model-picker`, or `mp` for short), a Claude Code skill that drives it, and an experimental chat router for [Pi](https://pi.dev). Both ways of running models use Pi: `build` runs each step as its own Pi session, and `chat` runs inside one Pi session, switching models as you go. `build` can use [OpenCode](https://opencode.ai) instead with `--harness opencode`.
-
-| To use | You need |
-|---|---|
-| `pick`, `providers`, `search` | [Bun](https://bun.sh) 1.4+ and a free [Firecrawl](https://firecrawl.dev) API key (`FIRECRAWL_API_KEY`) |
-| `chat` | the above, plus [Node](https://nodejs.org) 22.19+ (Pi runs on Node) and an [OpenRouter](https://openrouter.ai) key (`OPENROUTER_API_KEY`) |
-| `build` (experimental) | the same as `chat`; [OpenCode](https://opencode.ai) on your PATH only for `--harness opencode` |
-
-Model usage in `chat` and `build` is billed to your OpenRouter key.
-
-Optional for `chat` and `build`: a [SubQ](https://subq.ai) key (`SUBQ_API_KEY`). With it, [SubQ Snap](#labelling-with-subq-snap-optional), a decision model, labels the work instead of a GPT model.
-
-### Command line
+On macOS or Linux:
 
 ```sh
-git clone https://github.com/firecrawl/model-picker
-cd model-picker
-bun install
-bun link                                          # puts `model-picker` and `mp` on your PATH
-export FIRECRAWL_API_KEY=fc-...
-model-picker pick --min-score 45
+curl -fsSL https://raw.githubusercontent.com/firecrawl/model-picker/main/install.sh | sh
 ```
 
-### Chat
+This downloads the build for your machine from the [latest release](https://github.com/firecrawl/model-picker/releases/latest), checks it against the release's `SHA256SUMS`, and puts `model-picker` (and its short name `mp`) in `~/.local/bin`. It needs nothing else: no Bun, no Node, and [Pi](https://pi.dev) comes with it. Run the same line again to update, or end it with `| MODEL_PICKER_VERSION=v0.1.0 sh` to install a particular release.
 
-After the steps above, with Node 22.19+ installed:
+Then add your keys to `~/.config/model-picker/.env` (the installer creates it) or export them in your shell:
+
+| Key | For |
+|---|---|
+| `FIRECRAWL_API_KEY` | every command; free at [firecrawl.dev](https://firecrawl.dev) |
+| `OPENROUTER_API_KEY` | `chat` and `build`; model usage is billed to it |
+| `SUBQ_API_KEY` | optional: [SubQ Snap](#labelling-with-subq-snap-optional), a decision model, labels the work instead of a GPT model |
 
 ```sh
-export OPENROUTER_API_KEY=sk-or-...
+mp pick --min-score 45
 mp chat                                           # in the project folder you want to work in
 ```
 
-Instead of exporting keys each time, you can put `FIRECRAWL_API_KEY`, `OPENROUTER_API_KEY` and `SUBQ_API_KEY` in a `.env` file in the model-picker folder; `chat` reads it from any directory. `mp chat --help` lists the options. See [Pi router](#pi-router-experimental) for how routing works.
+model-picker is a command-line tool, a Claude Code skill that drives it, and an experimental chat router for Pi. Both ways of running models use Pi: `build` runs each step as its own Pi session, and `chat` runs inside one Pi session, switching models as you go. `build` can use [OpenCode](https://opencode.ai) instead with `--harness opencode`, which must be on your PATH. `mp chat --help` lists the chat options; see [Pi router](#pi-router-experimental) for how routing works.
+
+To check where a release came from: `gh attestation verify model-picker-darwin-arm64.tar.gz --repo firecrawl/model-picker`. To uninstall: `rm -rf ~/.local/share/model-picker ~/.local/bin/model-picker ~/.local/bin/mp ~/.config/model-picker`.
 
 ### Claude Code
 
@@ -59,11 +50,20 @@ Inside Claude Code:
 /plugin install model-picker@model-picker
 ```
 
-Set `FIRECRAWL_API_KEY` in the shell you start Claude Code from. Then ask things like "which model should I use for my support bot?", "find me a cheaper provider for GLM-5.3" or "build this with the cheapest models".
+The skill uses the `model-picker` command, so install it as above first. Then ask things like "which model should I use for my support bot?", "find me a cheaper provider for GLM-5.3" or "build this with the cheapest models".
 
-### For `build`
+### From source
 
-`build` needs the same as `chat`: Node 22.19+ and an [OpenRouter](https://openrouter.ai) key in `OPENROUTER_API_KEY`. It runs each step in Pi, which `bun install` already installed. With `--harness opencode` it uses [OpenCode](https://opencode.ai) instead, which must be on your PATH. The models' usage is billed to the OpenRouter key either way.
+Needs [Bun](https://bun.sh) 1.4+, and [Node](https://nodejs.org) 22.19+ for `chat` and `build` (Pi runs on Node from source):
+
+```sh
+git clone https://github.com/firecrawl/model-picker
+cd model-picker
+bun install
+bun link                                          # puts `model-picker` and `mp` on your PATH
+```
+
+From source, a `.env` in the model-picker folder works as well as `~/.config/model-picker/.env`.
 
 ## How it picks
 
@@ -155,7 +155,7 @@ mp chat --value-margin 2        # pay up to 2x the cheapest for a better-suited 
 
 If a filter leaves no model above a difficulty's floor (no Chinese model scores 50+, for instance), that difficulty goes to the strongest allowed model, marked "best available" in the header and footer.
 
-`chat` opens Pi's terminal UI with the router loaded and selected. It needs `OPENROUTER_API_KEY`, and the Firecrawl key from your environment or model-picker's own `.env`.
+`chat` opens Pi's terminal UI with the router loaded and selected. It needs `OPENROUTER_API_KEY` and `FIRECRAWL_API_KEY`, from your environment or `~/.config/model-picker/.env`.
 
 The footer shows why each message went where it did (e.g. `hard · coding → GPT-6.1 Sol high`) and a running savings line, e.g. `$0.42 spent · ~$3.10 on Claude Opus 5.5 · saved 86%`. The comparison prices this session's actual tokens at the baseline model's rates, so it's an estimate: the baseline would have written different responses. `/session` shows cost per model. To limit the candidates, write `~/.config/model-picker/router.json` (or point `MODEL_PICKER_ROUTER_SETTINGS` at a file):
 
@@ -172,6 +172,8 @@ A `pick` uses 20 Firecrawl credits and a `providers` lookup 5. Results are cache
 ## Contributing
 
 The repo includes [agent-harness](https://github.com/firecrawl/model-picker/tree/main/.harness) checks: if you work on it with Claude Code, `.claude/settings.json` runs formatting, lint and typecheck after each edit and the full checks (`.harness/hooks/check-all.sh`) before the agent stops. Without Claude Code, run that script yourself before opening a pull request, plus `bun test`.
+
+To release, bump `version` in `package.json`, then push a matching tag (`git tag v0.2.0 && git push origin v0.2.0`). The Release workflow builds the four platforms with `scripts/package.sh`, which you can also run locally (e.g. `scripts/package.sh darwin-arm64`), and publishes them with `SHA256SUMS` and build attestations. Pi's version comes from the `@earendil-works/pi-coding-agent` pin in `package.json`.
 
 ## License
 
